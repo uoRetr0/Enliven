@@ -6,6 +6,11 @@ export default {
   ],
   theme: {
     extend: {
+      borderRadius: {
+        sm: '8px',
+        DEFAULT: '12px',
+        lg: '16px',
+      },
       colors: {
         bg: {
           primary: '#0a0a0f',

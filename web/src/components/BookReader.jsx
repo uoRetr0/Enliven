@@ -243,28 +243,68 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
 
   // Upload state
   if (!hasExtracted) {
+    // Loading state with skeleton
+    if (isLoading) {
+      return (
+        <div className="space-y-4">
+          <div className="text-center mb-4">
+            <h2 className="text-xl font-bold font-display mb-1">
+              Extracting characters...
+            </h2>
+            <p className="text-text-muted text-sm">
+              Analyzing your text for character dialogues
+            </p>
+          </div>
+
+          {/* Skeleton preview */}
+          <div className="rounded-lg border border-white/10 bg-bg-secondary p-4 space-y-3">
+            <div className="h-3 bg-bg-card rounded animate-pulse w-3/4" />
+            <div className="h-3 bg-bg-card rounded animate-pulse w-full" />
+            <div className="h-3 bg-bg-card rounded animate-pulse w-2/3" />
+          </div>
+
+          {/* Character pills skeleton */}
+          <div className="space-y-2">
+            <div className="h-3 bg-bg-card rounded animate-pulse w-20" />
+            <div className="flex gap-2">
+              <div className="h-7 bg-bg-card rounded-sm animate-pulse w-16" />
+              <div className="h-7 bg-bg-card rounded-sm animate-pulse w-20" />
+              <div className="h-7 bg-bg-card rounded-sm animate-pulse w-14" />
+            </div>
+          </div>
+
+          <div className="flex justify-center pt-2">
+            <div className="flex items-center gap-2 text-accent">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Processing...</span>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="space-y-6">
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold font-display mb-2">
+      <div className="space-y-4">
+        <div className="text-center mb-2">
+          <h2 className="text-xl font-bold font-display mb-1">
             Bring your books to <span className="gradient-text">life</span>
           </h2>
-          <p className="text-text-secondary">
-            Upload a book or paste text to extract characters
+          <p className="text-text-muted text-sm">
+            Upload or paste text to extract characters
           </p>
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           className={`
-            relative rounded-2xl border-2 border-dashed transition-all duration-300
+            rounded-lg border border-dashed transition-all duration-200
             ${isDragging
-              ? 'border-accent bg-accent/5 scale-[1.01]'
-              : 'border-white/10 bg-bg-secondary hover:border-white/20'
+              ? 'border-accent bg-accent/5'
+              : 'border-white/10 hover:border-white/20'
             }
           `}
         >
@@ -276,86 +316,76 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
             className="hidden"
           />
 
-          <div className="p-6">
-            <div className="text-center mb-4">
+          <div className="p-4">
+            {/* Compact file drop / browse row */}
+            <div className="flex items-center gap-3 mb-3">
               <motion.div
-                animate={{ y: isDragging ? -5 : 0 }}
-                className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-bg-card mb-3"
+                animate={{ y: isDragging ? -2 : 0 }}
+                className="flex items-center justify-center w-10 h-10 rounded-sm bg-bg-card border border-white/10"
               >
                 {fileName ? (
-                  <FileText className="w-6 h-6 text-accent" />
+                  <FileText className="w-5 h-5 text-accent" />
                 ) : (
-                  <Upload className="w-6 h-6 text-text-muted" />
+                  <Upload className="w-5 h-5 text-text-muted" />
                 )}
               </motion.div>
 
-              {fileName ? (
-                <p className="text-text-primary font-medium text-sm">{fileName}</p>
-              ) : (
-                <>
-                  <p className="text-text-primary font-medium text-sm mb-1">
-                    Drop your book here
-                  </p>
-                  <p className="text-text-muted text-xs">
-                    or{' '}
+              <div className="flex-1 min-w-0">
+                {fileName ? (
+                  <p className="text-text-primary font-medium text-sm truncate">{fileName}</p>
+                ) : (
+                  <p className="text-text-secondary text-sm">
+                    Drop file or{' '}
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="text-accent hover:underline"
                     >
-                      browse files
+                      browse
                     </button>
-                    {' '}(PDF, TXT)
+                    {' '}<span className="text-text-muted">(PDF, TXT)</span>
                   </p>
-                </>
-              )}
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-2 mb-3">
               <div className="flex-1 h-px bg-white/10" />
               <span className="text-text-muted text-xs">or paste text</span>
               <div className="flex-1 h-px bg-white/10" />
             </div>
 
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Paste your book text here..."
-              className="w-full h-40 px-4 py-3 rounded-xl bg-bg-card border border-white/5 text-text-primary placeholder-text-muted text-sm resize-none focus:outline-none focus:border-accent/50 transition-colors"
-            />
-
-            <div className="flex justify-center mt-2">
-              <button
-                onClick={loadSampleText}
-                className="text-xs text-text-muted hover:text-accent transition-colors"
-              >
-                Load sample text
-              </button>
+            {/* Textarea with inline sample link */}
+            <div className="space-y-1.5">
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Paste your book text here..."
+                className="w-full h-48 px-3 py-2.5 rounded-sm bg-bg-card border border-white/10 text-text-primary placeholder-text-muted text-sm resize-none focus:outline-none focus:border-accent/50 transition-colors"
+              />
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={loadSampleText}
+                  className="text-xs text-text-muted hover:text-accent transition-colors"
+                >
+                  Try sample text
+                </button>
+                <button
+                  onClick={handleExtract}
+                  disabled={!text.trim()}
+                  className={`
+                    flex items-center gap-1.5 px-4 py-1.5 rounded-sm font-medium text-sm transition-all duration-200
+                    ${text.trim()
+                      ? 'bg-accent hover:bg-accent-dim text-white'
+                      : 'bg-bg-card text-text-muted cursor-not-allowed border border-white/10'
+                    }
+                  `}
+                >
+                  Extract Characters
+                </button>
+              </div>
             </div>
           </div>
         </motion.div>
-
-        <div className="flex justify-center">
-          <button
-            onClick={handleExtract}
-            disabled={!text.trim() || isLoading}
-            className={`
-              flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-300
-              ${text.trim() && !isLoading
-                ? 'bg-accent hover:bg-accent-dim text-white shadow-glow-sm'
-                : 'bg-bg-card text-text-muted cursor-not-allowed'
-              }
-            `}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Extracting...</span>
-              </>
-            ) : (
-              <span>Extract Characters</span>
-            )}
-          </button>
-        </div>
       </div>
     )
   }
@@ -370,7 +400,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
       return bookText.split('\n\n').map((paragraph, index) => (
         <p
           key={index}
-          className="text-text-primary leading-relaxed mb-4 last:mb-0"
+          className="text-text-primary/90 leading-[1.8] mb-6 last:mb-0 indent-0 first:indent-0"
         >
           {paragraph}
         </p>
@@ -382,18 +412,22 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
     return bookText.split('\n\n').map((paragraph, pIndex) => (
       <p
         key={pIndex}
-        className="text-text-primary leading-relaxed mb-4 last:mb-0"
+        className="text-text-primary/90 leading-[1.8] mb-6 last:mb-0"
       >
         {paragraph.split(/\s+/).map((word, wIndex) => {
           const currentWordCounter = wordCounter
           wordCounter++
+          const isCurrent = currentWordCounter === globalWordIndex
+          const isNear = Math.abs(currentWordCounter - globalWordIndex) <= 2 && globalWordIndex >= 0
           return (
             <span
               key={wIndex}
-              className={`transition-colors duration-150 ${
-                currentWordCounter === globalWordIndex
-                  ? 'bg-accent/30 rounded px-0.5'
-                  : ''
+              className={`transition-all duration-200 ${
+                isCurrent
+                  ? 'text-accent underline decoration-accent/60 decoration-2 underline-offset-2'
+                  : isNear
+                    ? 'text-text-primary'
+                    : 'text-text-primary/70'
               }`}
             >
               {word}{' '}
@@ -404,19 +438,27 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
     ))
   }
 
+  // Calculate progress within current segment
+  const getSegmentProgress = () => {
+    if (!audiobookData || !audioRef.current) return 0
+    const duration = audioRef.current.duration || 1
+    const currentTime = audioRef.current.currentTime || 0
+    return (currentTime / duration) * 100
+  }
+
   return (
     <div className="flex flex-col h-full">
-      {/* Audiobook controls */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Unified audiobook control bar */}
+      <div className="flex items-center gap-2 mb-3 p-2 rounded-sm bg-bg-card border border-white/10">
         {!audiobookData ? (
           <button
             onClick={handleGenerateAudiobook}
             disabled={isGeneratingAudiobook || !bookText.trim()}
             className={`
-              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
+              flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm font-medium transition-all
               ${isGeneratingAudiobook || !bookText.trim()
-                ? 'bg-bg-card text-text-muted cursor-not-allowed'
-                : 'bg-bg-card hover:bg-bg-secondary text-text-primary border border-white/10 hover:border-white/20'
+                ? 'text-text-muted cursor-not-allowed'
+                : 'text-text-primary hover:text-accent'
               }
             `}
           >
@@ -433,37 +475,45 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
             )}
           </button>
         ) : (
-          <button
-            onClick={togglePlayPause}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-accent hover:bg-accent-dim text-white transition-all"
-          >
-            {isPlaying ? (
-              <>
-                <Pause className="w-4 h-4" />
-                <span>Pause</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                <span>Play</span>
-              </>
-            )}
-          </button>
-        )}
-
-        {audiobookData && (
           <>
+            {/* Play/Pause button */}
+            <button
+              onClick={togglePlayPause}
+              className="flex items-center justify-center w-8 h-8 rounded-sm bg-accent hover:bg-accent-dim text-white transition-all"
+            >
+              {isPlaying ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4 ml-0.5" />
+              )}
+            </button>
+
+            {/* Progress bar */}
+            <div className="flex-1 mx-2">
+              <div className="h-1 bg-bg-secondary rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-accent"
+                  initial={false}
+                  animate={{ width: `${getSegmentProgress()}%` }}
+                  transition={{ duration: 0.1 }}
+                />
+              </div>
+            </div>
+
+            {/* Segment indicator */}
+            <span className="text-xs text-text-muted whitespace-nowrap">
+              {currentSegment + 1}/{audiobookData.segments.length}
+            </span>
+
+            {/* Regenerate button */}
             <button
               onClick={handleGenerateAudiobook}
               disabled={isGeneratingAudiobook}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-bg-card hover:bg-bg-secondary text-text-secondary border border-white/10 hover:border-white/20 transition-all"
+              className="flex items-center justify-center w-8 h-8 rounded-sm text-text-muted hover:text-text-primary hover:bg-bg-secondary transition-all"
               title="Regenerate audiobook"
             >
-              <RefreshCw className={`w-4 h-4 ${isGeneratingAudiobook ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingAudiobook ? 'animate-spin' : ''}`} />
             </button>
-            <span className="text-xs text-text-muted">
-              Segment {currentSegment + 1} / {audiobookData.segments.length}
-            </span>
           </>
         )}
       </div>
@@ -483,18 +533,18 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
         />
       )}
 
-      {/* Book text area */}
-      <div className="flex-1 overflow-y-auto rounded-2xl bg-bg-secondary border border-white/5 p-6 mb-4">
-        <div className="prose prose-invert max-w-none">
+      {/* Book text area - improved reading typography */}
+      <div className="flex-1 overflow-y-auto rounded-lg bg-bg-secondary/50 border border-white/10 p-6 mb-3">
+        <div className="max-w-2xl mx-auto text-[15px]">
           {renderTextWithHighlighting()}
         </div>
       </div>
 
-      {/* Character pills */}
+      {/* Character pills - compact */}
       {characters.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-text-muted">Characters in this book:</p>
-          <div className="flex flex-wrap gap-2">
+        <div className="space-y-1.5">
+          <p className="text-xs text-text-muted font-medium">Characters</p>
+          <div className="flex flex-wrap gap-1.5">
             {characters.map((character) => (
               <CharacterPill
                 key={character.id}

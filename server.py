@@ -326,6 +326,46 @@ def _get_all_voices(session: SessionData | None = None) -> list:
     return voices
 
 
+def _score_narrator_voice(voice) -> int:
+    """Score how well a voice suits narration (higher = better)."""
+    score = 0
+    labels = voice.labels or {}
+    use_case = labels.get("use_case", "").lower()
+    description = labels.get("description", "").lower()
+    accent = labels.get("accent", "").lower()
+    age = labels.get("age", "").lower()
+
+    # Strong preference for narration-focused voices
+    if "narration" in use_case or "audiobook" in use_case:
+        score += 50
+    if "storytelling" in use_case:
+        score += 40
+
+    # Voice qualities ideal for narration
+    if "clear" in description:
+        score += 20
+    if "warm" in description:
+        score += 15
+    if "smooth" in description:
+        score += 15
+    if "calm" in description or "soothing" in description:
+        score += 10
+
+    # Neutral accents work better for narration
+    if "american" in accent or "british" in accent:
+        score += 10
+
+    # Middle-aged voices tend to work well for narration
+    if "middle" in age:
+        score += 10
+
+    # Slight penalty for character-focused voices
+    if "characters" in use_case and "narration" not in use_case:
+        score -= 10
+
+    return score
+
+
 def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     """Get or assign a voice for a speaker (session-scoped).
 
@@ -338,17 +378,15 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     if speaker_key in session.voice_map:
         return session.voice_map[speaker_key]
 
-    # For narrator, find a good narrator voice
+    # For narrator, find the best narrator voice using scoring
     if speaker_key == "narrator":
         voices = _get_all_voices(session)
-        for v in voices:
-            labels = v.labels or {}
-            if "narrator" in labels.get("use_case", "").lower():
-                session.voice_map["narrator"] = v.voice_id
-                return v.voice_id
-        # Fallback to first voice
-        session.voice_map["narrator"] = voices[0].voice_id
-        return voices[0].voice_id
+        # Score all voices for narration suitability
+        scored = [(v, _score_narrator_voice(v)) for v in voices]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        best_voice = scored[0][0] if scored else voices[0]
+        session.voice_map["narrator"] = best_voice.voice_id
+        return best_voice.voice_id
 
     # For characters, use chat's picker (single source of truth)
     for char in session.characters:
@@ -362,9 +400,12 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
             session.voice_map[char_key] = char.voice_id
             return char.voice_id
 
-    # Unknown speaker fallback
+    # Unknown speaker fallback - use a neutral voice
     voices = _get_all_voices(session)
-    voice_id = voices[0].voice_id
+    # Score for neutral/general use
+    scored = [(v, _score_narrator_voice(v)) for v in voices]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    voice_id = scored[0][0].voice_id if scored else voices[0].voice_id
     session.voice_map[speaker_key] = voice_id
     return voice_id
 

@@ -369,40 +369,120 @@ class CharacterChat:
                 )
         return self._voices_cache
 
+    def _score_voice_for_character(self, voice: dict, character: Character) -> int:
+        """Score how well a voice matches a character (higher = better)."""
+        score = 0
+        char_desc = f"{character.description} {character.personality}".lower()
+        char_gender = character.gender.lower() if character.gender else "unknown"
+
+        # Gender match is most important
+        if voice["gender"].lower() == char_gender:
+            score += 100
+
+        # Age matching
+        voice_age = voice["age"].lower()
+        if "young" in char_desc or "child" in char_desc or "boy" in char_desc or "girl" in char_desc:
+            if voice_age == "young":
+                score += 30
+        elif "old" in char_desc or "elderly" in char_desc or "aged" in char_desc:
+            if voice_age == "old":
+                score += 30
+        elif "middle" in char_desc:
+            if voice_age == "middle aged" or voice_age == "middle-aged":
+                score += 30
+        else:
+            # Default to middle-aged for adult characters
+            if voice_age == "middle aged" or voice_age == "middle-aged":
+                score += 15
+
+        # Accent matching
+        voice_accent = voice["accent"].lower()
+        if "british" in char_desc or "english" in char_desc or "london" in char_desc:
+            if "british" in voice_accent:
+                score += 25
+        elif "american" in char_desc:
+            if "american" in voice_accent:
+                score += 25
+        elif "irish" in char_desc:
+            if "irish" in voice_accent:
+                score += 25
+        elif "scottish" in char_desc:
+            if "scottish" in voice_accent:
+                score += 25
+
+        # Voice quality matching from description
+        voice_desc = voice["description"].lower()
+        if "warm" in char_desc and "warm" in voice_desc:
+            score += 15
+        if "deep" in char_desc and "deep" in voice_desc:
+            score += 15
+        if "soft" in char_desc and "soft" in voice_desc:
+            score += 15
+        if "rough" in char_desc and ("rough" in voice_desc or "raspy" in voice_desc):
+            score += 15
+        if "gentle" in char_desc and "gentle" in voice_desc:
+            score += 15
+        if "authorit" in char_desc and "authorit" in voice_desc:
+            score += 15
+
+        # Prefer character voices over narration voices for dialogue
+        use_case = voice["use_case"].lower()
+        if "characters" in use_case or "conversational" in use_case:
+            score += 20
+        elif "narration" in use_case or "audiobook" in use_case:
+            score += 5  # Still usable but less ideal for character dialogue
+
+        return score
+
     def _pick_voice_for_character(self, character: Character) -> str:
-        """Use LLM to pick the best fitting voice for a character."""
+        """Use scoring + LLM to pick the best fitting voice for a character."""
         voices = self._get_available_voices()
 
         # Use explicit gender from character profile
         char_gender = character.gender.lower() if character.gender else "unknown"
 
-        # Filter voices by gender first for better matching
+        # Filter voices by gender first
         gender_matched = [
             v for v in voices if v["gender"].lower() == char_gender
         ] if char_gender in ["male", "female"] else voices
 
         # Use gender-matched voices if available
-        available_voices = gender_matched if gender_matched else voices
+        candidates = gender_matched if gender_matched else voices
+
+        # Score and sort candidates
+        scored = [(v, self._score_voice_for_character(v, character)) for v in candidates]
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # Take top 8 candidates for LLM to choose from
+        top_candidates = [v for v, _ in scored[:8]]
 
         voices_desc = "\n".join(
             [
-                f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}"
-                for v in available_voices
+                f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}. Best for: {v['use_case']}"
+                for v in top_candidates
             ]
         )
 
-        prompt = f"""Pick the best voice for this character. Return ONLY the voice_id, nothing else.
+        prompt = f"""Select the best voice for this literary character. Return ONLY the voice_id.
 
-CHARACTER:
+CHARACTER PROFILE:
 Name: {character.name}
 Gender: {char_gender}
-Description: {character.description}
-Personality: {character.personality}
+Physical/Voice Description: {character.description}
+Personality & Speech Style: {character.personality}
+Background: {character.backstory}
 
-AVAILABLE VOICES:
+VOICE OPTIONS (pre-filtered for best matches):
 {voices_desc}
 
-Return only the voice_id that best matches the character's gender, age, and personality."""
+MATCHING PRIORITIES:
+1. Gender must match
+2. Age should fit the character (young/middle-aged/old)
+3. Accent should match setting (British for UK stories, American for US, etc.)
+4. Voice quality should match personality (warm, authoritative, gentle, rough, etc.)
+5. Prefer voices suited for "characters" or "conversational" use
+
+Return ONLY the voice_id of the best match."""
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -419,9 +499,9 @@ Return only the voice_id that best matches the character's gender, age, and pers
         # Validate voice_id exists
         valid_ids = [v["voice_id"] for v in voices]
         if voice_id not in valid_ids:
-            # Fallback to first gender-matched voice
-            if gender_matched:
-                return gender_matched[0]["voice_id"]
+            # Fallback to highest scored voice
+            if scored:
+                return scored[0][0]["voice_id"]
             return voices[0]["voice_id"]
 
         return voice_id
