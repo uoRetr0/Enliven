@@ -247,3 +247,19 @@ You ARE this character. Respond in first person."""
             raise FileNotFoundError(f"Failed to create audio file: {output_path}")
 
         return text_response, output_path
+
+    def chat_with_voice_stream(self, user_message: str):
+        """Send a message and stream audio response. Returns (text, audio_generator)."""
+        text_response = self.chat(user_message)
+
+        # Track ElevenLabs character usage
+        self.costs.elevenlabs_characters += len(text_response)
+
+        audio_stream = self.elevenlabs.text_to_speech.convert(
+            voice_id=self.current_character.voice_id,
+            text=text_response,
+            model_id="eleven_turbo_v2_5",  # Faster model for streaming
+            output_format="pcm_24000"      # Raw PCM for real-time playback
+        )
+
+        return text_response, audio_stream
