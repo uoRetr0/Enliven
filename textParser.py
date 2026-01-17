@@ -161,7 +161,7 @@ def parse_text_to_file(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=True, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
     return output_path
 
 if __name__ == "__main__":
