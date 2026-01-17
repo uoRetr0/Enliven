@@ -15,6 +15,7 @@ function App() {
   const [totalCost, setTotalCost] = useState(0)
   const [hasExtracted, setHasExtracted] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [lastMessageId, setLastMessageId] = useState(null) // Track the latest message that should auto-play
 
   const handleExtract = async (text) => {
     setIsLoading(true)
@@ -54,8 +55,9 @@ function App() {
     try {
       const response = await sendMessage(selectedCharacter.id, text)
 
+      const messageId = Date.now() + 1
       const charMessage = {
-        id: Date.now() + 1,
+        id: messageId,
         role: 'assistant',
         content: response.text,
         audioUrl: response.audioUrl,
@@ -64,6 +66,7 @@ function App() {
         ...prev,
         [charId]: [...(prev[charId] || []), charMessage]
       }))
+      setLastMessageId(messageId) // Mark this message for auto-play
 
       // Fetch real costs from backend
       const costs = await getCosts()
@@ -77,6 +80,15 @@ function App() {
 
   const handleToggleChat = () => {
     setIsChatOpen(!isChatOpen)
+  }
+
+  const handleBack = () => {
+    setHasExtracted(false)
+    setCharacters([])
+    setSelectedCharacter(null)
+    setMessagesByCharacter({})
+    setIsChatOpen(false)
+    setBookText('')
   }
 
   return (
@@ -98,6 +110,7 @@ function App() {
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
         audioEnabled={audioEnabled}
+        lastMessageId={lastMessageId}
       />
 
       {/* Main content */}
@@ -113,6 +126,8 @@ function App() {
             showChatToggle={hasExtracted && selectedCharacter}
             audioEnabled={audioEnabled}
             onToggleAudio={() => setAudioEnabled(!audioEnabled)}
+            hasExtracted={hasExtracted}
+            onBack={handleBack}
           />
 
           <div className="flex-1 overflow-hidden">

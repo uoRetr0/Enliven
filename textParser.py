@@ -20,16 +20,24 @@ You get one passage from a book.
 Return JSON: {"segments":[{"speaker_type":"narrator" or "character","character_name":string or null,"text":string}]}
 
 Rules:
-- narrator = non-dialogue description
-- character = spoken dialogue
+- character = ONLY text inside quotation marks (the actual spoken words)
+- narrator = EVERYTHING outside quotation marks, including:
+  - Action descriptions ("he said", "she shouted angrily")
+  - Attribution tags ("Ron complained", "Hermione replied")
+  - Scene descriptions ("his red hair falling into his eyes")
+  - Narrative prose between dialogue
 - thoughts count as character dialogue when attributed (e.g., "thought he", "thought the Wolf")
 - for thoughts, set character_name to the thinker and keep the quoted thought as character text
-- narrator -> character_name = null
+- narrator -> character_name = null (ALWAYS)
 - character -> use the FULL NAME if known (e.g., "Harry Potter" not just "Harry"), otherwise use exactly what the text provides
-- if speaker cannot be identified, use "Unknown"
-- keep quotation marks
-- keep order
+- if character speaker cannot be identified, use "Unknown"
+- Split text at quotation mark boundaries - do NOT combine narrator text with dialogue
+- Do NOT include quotation marks in the text field
+- keep original order
 - return ONLY valid JSON, no text outside JSON
+
+Example input: "Hello," said John, walking slowly. "How are you?"
+Example output: {"segments":[{"speaker_type":"character","character_name":"John","text":"Hello,"},{"speaker_type":"narrator","character_name":null,"text":"said John, walking slowly."},{"speaker_type":"character","character_name":"John","text":"How are you?"}]}
 """
 
 def _extract_json(text: str):

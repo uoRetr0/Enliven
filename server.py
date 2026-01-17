@@ -5,11 +5,13 @@ FastAPI server for Enliven - connects frontend to character chat backend
 import base64
 import os
 import uuid
-from fastapi import FastAPI, HTTPException
+import tempfile
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from character_chat import CharacterChat, Character, get_characters_from_audiobook, extract_characters_from_text
+from pdfExtractor import extract_pdf_to_string
 
 app = FastAPI(title="Enliven API")
 
@@ -90,10 +92,49 @@ class AudiobookResponse(BaseModel):
     segments: list[SegmentAudio]
 
 
+class PDFExtractResponse(BaseModel):
+    text: str
+
+
+@app.post("/api/extract-pdf", response_model=PDFExtractResponse)
+async def extract_pdf(file: UploadFile = File(...)):
+    """Extract text from an uploaded PDF file."""
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    try:
+        # Save uploaded file to temp location
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # Extract text from PDF
+        text = extract_pdf_to_string(tmp_path)
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from PDF. The PDF may be image-based or empty.")
+
+        return PDFExtractResponse(text=text)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract PDF: {str(e)}")
+
+
 @app.post("/api/extract-characters", response_model=ExtractResponse)
 async def extract_characters(request: ExtractRequest):
     """Extract characters from book text."""
-    global characters_cache
+    global characters_cache, _audiobook_voice_map, _narrator_voice_id, _voices_cache
+
+    # Clear voice cache so new characters get fresh voice assignments
+    _audiobook_voice_map = {}
+    _narrator_voice_id = None
+    _voices_cache = None
 
     # Extract real characters from text
     characters_cache = extract_characters_from_text(request.text)
@@ -213,19 +254,96 @@ async def transcribe(request: TranscribeRequest):
 # Voice map for audiobook generation (shared across requests)
 _audiobook_voice_map: dict[str, str] = {}
 _narrator_voice_id: str | None = None
+_voices_cache: list | None = None
+
+
+def _get_all_voices():
+    """Get and cache all ElevenLabs voices."""
+    global _voices_cache
+    if _voices_cache is None:
+        from elevenlabs import ElevenLabs
+        elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+        response = elevenlabs.voices.get_all()
+        _voices_cache = response.voices
+    return _voices_cache
+
+
+def _pick_voice_for_character_llm(speaker: str, voices: list) -> str:
+    """Use LLM to pick the best voice for a character based on their profile."""
+    from openai import OpenAI
+
+    # Find character profile from cache
+    char_profile = None
+    for char in characters_cache:
+        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
+            char_profile = char
+            break
+
+    if not char_profile:
+        # No profile found, fall back to hash-based selection
+        voice_ids = [v.voice_id for v in voices]
+        score = sum(ord(ch) for ch in speaker.lower())
+        return voice_ids[score % len(voice_ids)]
+
+    # Build voice descriptions
+    voices_desc = "\n".join([
+        f"- {v.name} (id: {v.voice_id}): {(v.labels or {}).get('gender', 'unknown')} gender, {(v.labels or {}).get('age', 'unknown')} age, {(v.labels or {}).get('accent', 'unknown')} accent. {(v.labels or {}).get('description', '')}"
+        for v in voices
+    ])
+
+    prompt = f"""Pick the best voice for this character. Return ONLY the voice_id, nothing else.
+
+CHARACTER:
+Name: {char_profile.name}
+Description: {char_profile.description}
+Personality: {char_profile.personality}
+
+AVAILABLE VOICES:
+{voices_desc}
+
+Return only the voice_id that best matches the character's gender, age, and personality."""
+
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+    )
+
+    response = client.chat.completions.create(
+        model="google/gemini-2.0-flash-001",
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    voice_id = response.choices[0].message.content.strip()
+
+    # Validate voice_id exists
+    valid_ids = [v.voice_id for v in voices]
+    if voice_id in valid_ids:
+        return voice_id
+
+    # Fallback: try to match gender from description
+    char_text = f"{char_profile.description} {char_profile.name}".lower()
+    is_female = any(w in char_text for w in ["woman", "female", "girl", "she", "her", "lady", "mrs", "miss"])
+
+    for v in voices:
+        labels = v.labels or {}
+        gender = labels.get("gender", "").lower()
+        if is_female and gender == "female":
+            return v.voice_id
+        elif not is_female and gender == "male":
+            return v.voice_id
+
+    # Final fallback
+    return voices[0].voice_id
 
 
 def _get_voice_for_speaker(speaker: str) -> str:
     """Get or assign a voice for a speaker."""
     global _narrator_voice_id
-    from elevenlabs import ElevenLabs
 
     if speaker in _audiobook_voice_map:
         return _audiobook_voice_map[speaker]
 
-    elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-    response = elevenlabs.voices.get_all()
-    voices = response.voices
+    voices = _get_all_voices()
 
     if not voices:
         raise ValueError("No ElevenLabs voices available.")
@@ -252,16 +370,13 @@ def _get_voice_for_speaker(speaker: str) -> str:
         _audiobook_voice_map["narrator"] = _narrator_voice_id
         return _narrator_voice_id
 
-    # For characters, exclude the narrator voice and pick from remaining
-    voice_ids = [v.voice_id for v in voices if v.voice_id != _narrator_voice_id]
+    # For characters, exclude the narrator voice and use LLM to pick best match
+    available_voices = [v for v in voices if v.voice_id != _narrator_voice_id]
 
-    if not voice_ids:
-        # Fallback if all voices were filtered out
-        voice_ids = [v.voice_id for v in voices]
+    if not available_voices:
+        available_voices = voices
 
-    # Deterministic voice selection based on speaker name
-    score = sum(ord(ch) for ch in speaker.lower())
-    voice_id = voice_ids[score % len(voice_ids)]
+    voice_id = _pick_voice_for_character_llm(speaker, available_voices)
     _audiobook_voice_map[speaker] = voice_id
 
     return voice_id

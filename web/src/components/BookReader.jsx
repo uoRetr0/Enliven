@@ -51,7 +51,28 @@ export default function BookReader({
       const content = await file.text()
       setText(content)
     } else if (file.type === 'application/pdf') {
-      setText(`[PDF uploaded: ${file.name}]\n\nPDF text extraction will be handled by the backend.`)
+      setText('[Extracting text from PDF...]')
+
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch('http://localhost:8000/api/extract-pdf', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.detail || 'Failed to extract PDF')
+        }
+
+        const data = await response.json()
+        setText(data.text)
+      } catch (error) {
+        console.error('PDF extraction failed:', error)
+        setText(`[Failed to extract PDF: ${error.message}]`)
+      }
     }
   }
 

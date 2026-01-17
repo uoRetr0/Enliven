@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { MessageSquare, Volume2, VolumeX } from 'lucide-react'
+import { MessageSquare, Volume2, VolumeX, ArrowLeft } from 'lucide-react'
 
 export default function Header({
   cost = 0,
@@ -8,12 +8,25 @@ export default function Header({
   showChatToggle,
   audioEnabled,
   onToggleAudio,
+  hasExtracted,
+  onBack,
 }) {
   return (
     <header className="flex items-center justify-between mb-6">
-      <h1 className="text-xl font-bold font-display gradient-text">
-        ENLIVEN
-      </h1>
+      <div className="flex items-center gap-3">
+        {hasExtracted && onBack && (
+          <button
+            onClick={onBack}
+            className="p-2 rounded-md bg-bg-card border border-white/10 text-text-muted hover:text-text-primary hover:border-white/20 transition-colors"
+            title="Back to upload"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        )}
+        <h1 className="text-xl font-bold font-display gradient-text">
+          ENLIVEN
+        </h1>
+      </div>
 
       <div className="flex items-center gap-2">
         {/* Audio toggle */}
