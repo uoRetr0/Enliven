@@ -1,7 +1,16 @@
+# Python
 venv/
 __pycache__/
 *.pyc
 .env
+
+# Audio output
 *.mp3
 *.wav
 output/
+
+# Node
+node_modules/
+
+# Claude
+.claude/

@@ -17,12 +17,3 @@ def extract_pdf_to_string(pdf_path: str) -> str:
         return "\n\n".join(text_parts)
     except Exception as e:
         raise Exception(f"Error reading PDF: {e}") from e
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python pdfExtractor.py <path_to_pdf>")
-        raise SystemExit(1)
-    pdf_path = sys.argv[1]
-    text = extract_pdf_to_string(pdf_path)
-    print(text)
