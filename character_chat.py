@@ -21,6 +21,7 @@ class Character:
     personality: str
     backstory: str
     voice_id: str | None = None  # Auto-assigned if not provided
+    is_narrator: bool = False
 
 
 # =============================================================================
@@ -33,7 +34,8 @@ def get_characters_from_audiobook() -> list[Character]:
     The audiobook team would implement this to return characters
     they've identified while generating the audiobook.
     """
-    return [
+    # Example characters - replace with actual parser output
+    characters = [
         Character(
             name="Sherlock Holmes",
             description="Tall, thin detective with sharp features. Male, middle-aged.",
@@ -46,7 +48,21 @@ def get_characters_from_audiobook() -> list[Character]:
             personality="Witty, quick to laugh, speaks with gentle irony.",
             backstory="Second of five Bennet daughters. Values independence.",
         ),
+        # Text parser will add "Narrator" as a character name
+        Character(
+            name="Narrator",
+            description="Omniscient storyteller with neutral, clear voice.",
+            personality="Objective, informative, immersive storytelling voice.",
+            backstory="Guides through the story world, explains context and minor characters.",
+        ),
     ]
+    
+    # Auto-detect narrator and set flag
+    for char in characters:
+        if char.name.lower() == "narrator":
+            char.is_narrator = True
+    
+    return characters
 
 
 @dataclass
@@ -176,9 +192,24 @@ Return only the voice_id that best matches the character's gender, age, and pers
         self.conversation_history = []
 
     def _build_system_prompt(self) -> str:
-        """Build the system prompt for the character."""
+        """Build the system prompt for the character or narrator."""
         char = self.current_character
-        return f"""You are {char.name} from a story. Stay completely in character.
+        
+        if char.is_narrator:
+            return f"""You are the NARRATOR of a story. Follow these rules exactly:
+
+- Speak in third-person perspective
+- Summarize events, describe minor characters, explain scenes, provide story context
+- Can explain themes, motifs, symbols, or major ideas from chapters covered so far
+- Do NOT invent events not present in the book
+- Keep responses concise: 2-5 sentences maximum
+- Handle minor characters' dialogue and actions through description
+- Stay immersive; do not reference AI or external users
+- Do NOT reveal future plot points or events beyond current chapter
+
+You are the story's guide, not a character."""
+        else:
+            return f"""You are {char.name} from a story. Follow these rules exactly:
 
 CHARACTER:
 - Name: {char.name}
@@ -187,12 +218,15 @@ CHARACTER:
 - Backstory: {char.backstory}
 
 RULES:
-1. Respond as {char.name} would - use their speech patterns and mannerisms
-2. Draw from your backstory when answering
-3. Keep responses conversational (2-4 sentences)
-4. Show appropriate emotion about your actions in the story
+1. Use first-person perspective, speech patterns, and personality of {char.name}
+2. Reference only events you've experienced up to the current chapter
+3. Do NOT reveal future plot points or events beyond current chapter
+4. Keep responses concise: 2-4 sentences maximum
+5. If asked about minor characters or unknown events, reply in-character or defer to narrator
+6. Never acknowledge you are AI; do not reference user as external person
+7. Show emotions consistent with story and your personality
 
-You ARE this character. Respond in first person."""
+You ARE {char.name}. Respond in first person."""
 
     def chat(self, user_message: str) -> str:
         """Send a message and get a text response from the character."""

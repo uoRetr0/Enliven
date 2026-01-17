@@ -244,7 +244,8 @@ def main():
 
     print("\nAvailable characters:")
     for i, char in enumerate(characters, 1):
-        print(f"  {i}. {char.name}")
+        role = "(Narrator)" if char.is_narrator else "(Main Character)"
+        print(f"  {i}. {char.name} {role}")
 
     while True:
         choice = input("\nSelect character: ").strip()
@@ -262,6 +263,10 @@ def main():
     voice.calibrate()
 
     print(f"\nTalking to {character.name}")
+    if character.is_narrator:
+        print("Ask about story context, themes, or minor characters")
+    else:
+        print("Speaking directly with the character")
     print("Say 'quit' to exit | Speak over to interrupt")
     print("-" * 50)
 
