@@ -258,7 +258,7 @@ export default function MessageInput({ onSend, disabled, compact }) {
                   ? 'bg-bg-card border-accent/30 text-accent animate-pulse'
                   : disabled
                     ? 'bg-bg-card border-white/5 text-text-muted cursor-not-allowed'
-                    : 'bg-bg-card border-white/10 text-text-secondary hover:text-accent hover:border-accent/30'
+                    : 'bg-bg-card border-white/15 text-text-secondary hover:text-accent hover:border-accent/30'
             }
             ${compact ? 'p-2 rounded-md' : 'p-3 rounded-lg'}
           `}
@@ -282,7 +282,7 @@ export default function MessageInput({ onSend, disabled, compact }) {
             'Type or click mic...'
           }
           className={`
-            flex-1 bg-bg-card border border-white/10 text-text-primary placeholder-text-muted
+            flex-1 bg-bg-card border border-white/15 text-text-primary placeholder-text-muted
             focus:outline-none focus:border-accent/50 transition-colors disabled:opacity-50
             ${compact ? 'px-3 py-2 rounded-md text-sm' : 'px-4 py-3 rounded-lg'}
           `}
@@ -295,7 +295,7 @@ export default function MessageInput({ onSend, disabled, compact }) {
             flex items-center justify-center border transition-colors
             ${message.trim() && !disabled
               ? 'bg-accent border-accent text-white hover:bg-accent-dim'
-              : 'bg-bg-card border-white/10 text-text-muted cursor-not-allowed'
+              : 'bg-bg-card border-white/15 text-text-muted cursor-not-allowed'
             }
             ${compact ? 'p-2 rounded-md' : 'p-3 rounded-lg'}
           `}

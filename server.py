@@ -236,10 +236,18 @@ async def chat(request: ChatRequest):
     except (ValueError, IndexError):
         raise HTTPException(status_code=404, detail="Character not found")
 
-    # Always sync voice to session (use lowercase key for consistency)
+    # Ensure voice consistency: use cached voice from audiobook if available
+    char_key = character.name.lower()
+    if not character.voice_id and char_key in session.voice_map:
+        # Reuse voice from audiobook generation
+        character.voice_id = session.voice_map[char_key]
+
+    # Set character for chat (will pick voice if not already set)
     chat_instance.set_character(character)
+
+    # Sync voice to session voice_map
     if character.voice_id:
-        session.voice_map[character.name.lower()] = character.voice_id
+        session.voice_map[char_key] = character.voice_id
 
     # Get response with voice
     try:
@@ -366,13 +374,50 @@ def _score_narrator_voice(voice) -> int:
     return score
 
 
+def _match_speaker_to_character(speaker_key: str, characters: list) -> "Character | None":
+    """Find the best matching character for a speaker name.
+
+    Priority:
+    1. Exact match
+    2. Speaker is substring of character name (e.g., "Jim" in "Jim Smith")
+    3. Character name is substring of speaker (e.g., "Wolf" matches "The Wolf")
+
+    When multiple matches, prefer shorter character names (more specific).
+    """
+    exact_match = None
+    substring_matches = []
+
+    for char in characters:
+        char_key = char.name.lower()
+
+        # Exact match is highest priority
+        if char_key == speaker_key:
+            exact_match = char
+            break
+
+        # Check both directions for substring matching
+        if speaker_key in char_key or char_key in speaker_key:
+            substring_matches.append(char)
+
+    if exact_match:
+        return exact_match
+
+    if substring_matches:
+        # Prefer shorter names (more specific match)
+        # e.g., "Jim" over "Jimmy" when speaker is "Jim"
+        substring_matches.sort(key=lambda c: len(c.name))
+        return substring_matches[0]
+
+    return None
+
+
 def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     """Get or assign a voice for a speaker (session-scoped).
 
     Uses chat's voice picker as single source of truth for character voices.
     All voice_map keys are normalized to lowercase for consistency.
     """
-    speaker_key = speaker.lower()
+    speaker_key = speaker.lower().strip()
 
     # Check cache first (case-insensitive)
     if speaker_key in session.voice_map:
@@ -388,17 +433,21 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
         session.voice_map["narrator"] = best_voice.voice_id
         return best_voice.voice_id
 
-    # For characters, use chat's picker (single source of truth)
-    for char in session.characters:
-        char_key = char.name.lower()
-        # Match exact or substring (e.g., "Wolf" matches "The Wolf")
-        if char_key == speaker_key or speaker_key in char_key:
-            if not char.voice_id:
-                session.chat.set_character(char)
-            # Store with both keys for consistency
-            session.voice_map[speaker_key] = char.voice_id
-            session.voice_map[char_key] = char.voice_id
-            return char.voice_id
+    # For characters, find best match and use chat's picker
+    matched_char = _match_speaker_to_character(speaker_key, session.characters)
+
+    if matched_char:
+        char_key = matched_char.name.lower()
+
+        # Ensure voice is assigned (use chat's picker as single source of truth)
+        if not matched_char.voice_id:
+            session.chat.set_character(matched_char)
+
+        # Store with all relevant keys for consistency
+        voice_id = matched_char.voice_id
+        session.voice_map[speaker_key] = voice_id
+        session.voice_map[char_key] = voice_id
+        return voice_id
 
     # Unknown speaker fallback - use a neutral voice
     voices = _get_all_voices(session)

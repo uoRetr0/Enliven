@@ -17,7 +17,7 @@ export default function Header({
         {hasExtracted && onBack && (
           <button
             onClick={onBack}
-            className="p-2 rounded-md bg-bg-card border border-white/10 text-text-muted hover:text-text-primary hover:border-white/20 transition-colors"
+            className="p-2 rounded-md bg-bg-card border border-white/15 text-text-muted hover:text-text-primary hover:border-white/20 transition-colors"
             title="Back to upload"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -35,8 +35,8 @@ export default function Header({
           className={`
             p-2 rounded-md border transition-colors
             ${audioEnabled
-              ? 'bg-bg-card border-white/10 text-text-secondary hover:text-accent'
-              : 'bg-bg-card border-white/10 text-text-muted'
+              ? 'bg-bg-card border-white/15 text-text-secondary hover:text-accent'
+              : 'bg-bg-card border-white/15 text-text-muted'
             }
           `}
           title={audioEnabled ? 'Mute audio' : 'Enable audio'}
@@ -49,7 +49,7 @@ export default function Header({
         </button>
 
         {/* Cost badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-card border border-white/10">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-card border border-white/15">
           <span className="text-xs text-text-muted">$</span>
           <span className="text-sm font-medium text-text-secondary">
             {cost.toFixed(2)}
@@ -67,7 +67,7 @@ export default function Header({
               flex items-center gap-2 px-3 py-1.5 rounded-md border transition-colors
               ${isChatOpen
                 ? 'bg-accent border-accent text-white'
-                : 'bg-bg-card border-white/10 text-text-secondary hover:text-text-primary hover:border-white/20'
+                : 'bg-bg-card border-white/15 text-text-secondary hover:text-text-primary hover:border-white/20'
               }
             `}
           >

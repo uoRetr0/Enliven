@@ -97,10 +97,8 @@ function App() {
   return (
     <div className="min-h-screen bg-bg-primary relative overflow-hidden">
       {/* Background gradient */}
-      <div className="fixed inset-0 bg-gradient-radial from-accent/5 via-transparent to-transparent pointer-events-none" />
+      <div className="fixed inset-0 bg-gradient-radial from-accent/10 via-transparent to-transparent pointer-events-none" />
 
-      {/* Noise overlay */}
-      <div className="noise-overlay" />
 
       {/* Chat sidebar - left side */}
       <ChatSidebar

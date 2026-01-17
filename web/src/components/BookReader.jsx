@@ -257,7 +257,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
           </div>
 
           {/* Skeleton preview */}
-          <div className="rounded-lg border border-white/10 bg-bg-secondary p-4 space-y-3">
+          <div className="rounded-lg border border-white/15 bg-bg-secondary p-4 space-y-3">
             <div className="h-3 bg-bg-card rounded animate-pulse w-3/4" />
             <div className="h-3 bg-bg-card rounded animate-pulse w-full" />
             <div className="h-3 bg-bg-card rounded animate-pulse w-2/3" />
@@ -304,7 +304,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
             rounded-lg border border-dashed transition-all duration-200
             ${isDragging
               ? 'border-accent bg-accent/5'
-              : 'border-white/10 hover:border-white/20'
+              : 'border-white/15 hover:border-white/20'
             }
           `}
         >
@@ -321,7 +321,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
             <div className="flex items-center gap-3 mb-3">
               <motion.div
                 animate={{ y: isDragging ? -2 : 0 }}
-                className="flex items-center justify-center w-10 h-10 rounded-sm bg-bg-card border border-white/10"
+                className="flex items-center justify-center w-10 h-10 rounded-sm bg-bg-card border border-white/15"
               >
                 {fileName ? (
                   <FileText className="w-5 h-5 text-accent" />
@@ -349,9 +349,9 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
             </div>
 
             <div className="flex items-center gap-2 mb-3">
-              <div className="flex-1 h-px bg-white/10" />
+              <div className="flex-1 h-px bg-white/15" />
               <span className="text-text-muted text-xs">or paste text</span>
-              <div className="flex-1 h-px bg-white/10" />
+              <div className="flex-1 h-px bg-white/15" />
             </div>
 
             {/* Textarea with inline sample link */}
@@ -360,7 +360,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Paste your book text here..."
-                className="w-full h-48 px-3 py-2.5 rounded-sm bg-bg-card border border-white/10 text-text-primary placeholder-text-muted text-sm resize-none focus:outline-none focus:border-accent/50 transition-colors"
+                className="w-full h-48 px-3 py-2.5 rounded-sm bg-bg-card border border-white/15 text-text-primary placeholder-text-muted text-sm resize-none focus:outline-none focus:border-accent/50 transition-colors"
               />
               <div className="flex justify-between items-center">
                 <button
@@ -376,7 +376,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
                     flex items-center gap-1.5 px-4 py-1.5 rounded-sm font-medium text-sm transition-all duration-200
                     ${text.trim()
                       ? 'bg-accent hover:bg-accent-dim text-white'
-                      : 'bg-bg-card text-text-muted cursor-not-allowed border border-white/10'
+                      : 'bg-bg-card text-text-muted cursor-not-allowed border border-white/15'
                     }
                   `}
                 >
@@ -449,7 +449,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
   return (
     <div className="flex flex-col h-full">
       {/* Unified audiobook control bar */}
-      <div className="flex items-center gap-2 mb-3 p-2 rounded-sm bg-bg-card border border-white/10">
+      <div className="flex items-center gap-2 mb-3 p-2 rounded-sm bg-bg-card border border-white/15">
         {!audiobookData ? (
           <button
             onClick={handleGenerateAudiobook}
@@ -534,7 +534,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
       )}
 
       {/* Book text area - improved reading typography */}
-      <div className="flex-1 overflow-y-auto rounded-lg bg-bg-secondary/50 border border-white/10 p-6 mb-3">
+      <div className="flex-1 overflow-y-auto rounded-lg bg-bg-secondary/50 border border-white/15 p-6 mb-3">
         <div className="max-w-2xl mx-auto text-[15px]">
           {renderTextWithHighlighting()}
         </div>

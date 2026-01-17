@@ -10,7 +10,7 @@ export default function CharacterPill({ character, isSelected, onClick }) {
         px-3 py-1.5 rounded-sm text-sm font-medium transition-all duration-200
         ${isSelected
           ? 'bg-accent text-white shadow-glow-sm'
-          : 'bg-bg-card border border-white/10 text-text-secondary hover:border-accent/50 hover:text-text-primary'
+          : 'bg-bg-card border border-white/15 text-text-secondary hover:border-accent/50 hover:text-text-primary'
         }
       `}
     >

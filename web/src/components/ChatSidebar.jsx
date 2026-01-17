@@ -62,10 +62,10 @@ export default function ChatSidebar({
           exit={{ x: '-100%' }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
           style={{ width: width || DEFAULT_WIDTH }}
-          className="fixed top-0 left-0 h-full bg-bg-primary border-r border-white/10 flex flex-col z-50"
+          className="fixed top-0 left-0 h-full bg-bg-primary border-r border-white/15 flex flex-col z-50"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="flex items-center justify-between p-4 border-b border-white/15">
             <div>
               <p className="text-xs text-text-muted mb-0.5">Chat with</p>
               <h3 className="font-semibold text-text-primary">{character.name}</h3>
@@ -93,7 +93,7 @@ export default function ChatSidebar({
                     <button
                       key={prompt}
                       onClick={() => onSend(prompt)}
-                      className="w-full px-3 py-2 rounded-md bg-bg-card text-xs text-text-secondary hover:text-accent border border-white/5 hover:border-accent/30 transition-colors"
+                      className="w-full px-3 py-2 rounded-md bg-bg-card text-xs text-text-secondary hover:text-accent border border-white/10 hover:border-accent/30 transition-colors"
                     >
                       {prompt}
                     </button>
@@ -118,7 +118,7 @@ export default function ChatSidebar({
                     transition={{ duration: 0.15 }}
                     className="flex items-start gap-2"
                   >
-                    <div className="px-3 py-2 rounded-md bg-bg-card border border-white/5">
+                    <div className="px-3 py-2 rounded-md bg-bg-card border border-white/10">
                       <div className="flex gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-text-muted typing-dot" />
                         <span className="w-1.5 h-1.5 rounded-full bg-text-muted typing-dot" />
@@ -134,7 +134,7 @@ export default function ChatSidebar({
           </div>
 
           {/* Input */}
-          <div className="p-4 border-t border-white/10">
+          <div className="p-4 border-t border-white/15">
             <MessageInput onSend={onSend} disabled={isLoading} compact />
           </div>
 
@@ -147,7 +147,7 @@ export default function ChatSidebar({
               ${isResizing ? 'bg-accent/50' : 'bg-transparent'}
             `}
           >
-            <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 p-1 rounded bg-bg-card border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 p-1 rounded bg-bg-card border border-white/15 opacity-0 group-hover:opacity-100 transition-opacity">
               <GripVertical className="w-3 h-3 text-text-muted" />
             </div>
           </div>

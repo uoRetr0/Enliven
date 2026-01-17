@@ -13,26 +13,26 @@ export default {
       },
       colors: {
         bg: {
-          primary: '#0a0a0f',
-          secondary: '#12121a',
-          card: '#1a1a24',
-          elevated: '#222230',
+          primary: '#15151e',
+          secondary: '#1e1e2a',
+          card: '#262636',
+          elevated: '#2e2e40',
         },
         accent: {
-          DEFAULT: '#8b5cf6',
-          dim: '#6d28d9',
-          glow: '#a78bfa',
+          DEFAULT: '#a078ff',
+          dim: '#8860f0',
+          glow: '#c4a6ff',
         },
         text: {
-          primary: '#f4f4f5',
-          secondary: '#a1a1aa',
-          muted: '#71717a',
+          primary: '#fafafc',
+          secondary: '#c8c8d4',
+          muted: '#9898b0',
         }
       },
       boxShadow: {
-        'glow': '0 0 40px -10px rgba(139, 92, 246, 0.4)',
-        'glow-sm': '0 0 20px -5px rgba(139, 92, 246, 0.3)',
-        'inner-glow': 'inset 0 1px 0 0 rgba(255,255,255,0.05)',
+        'glow': '0 0 40px -10px rgba(160, 120, 255, 0.6)',
+        'glow-sm': '0 0 20px -5px rgba(160, 120, 255, 0.5)',
+        'inner-glow': 'inset 0 1px 0 0 rgba(255,255,255,0.1)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
