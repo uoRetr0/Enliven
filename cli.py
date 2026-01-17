@@ -103,8 +103,11 @@ class VoiceInput:
 
         energies = []
         for _ in range(30):  # ~1 second
-            data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-            energies.append(get_audio_energy(data))
+            try:
+                data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
+                energies.append(get_audio_energy(data))
+            except Exception:
+                continue
 
         stream.stop_stream()
         stream.close()
