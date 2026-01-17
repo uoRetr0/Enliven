@@ -1,36 +1,55 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Pause } from 'lucide-react'
+import { Play, Volume2 } from 'lucide-react'
 
-export default function ChatMessage({ message, characterName }) {
+export default function ChatMessage({ message, characterName, autoPlay = false }) {
   const [isPlaying, setIsPlaying] = useState(false)
+  const [audioReady, setAudioReady] = useState(false)
   const audioRef = useRef(null)
+  const hasAutoPlayedRef = useRef(false)
   const isUser = message.role === 'user'
 
   useEffect(() => {
-    if (message.audioUrl && !audioRef.current) {
-      audioRef.current = new Audio(message.audioUrl)
-      audioRef.current.onended = () => setIsPlaying(false)
-      audioRef.current.onerror = () => setIsPlaying(false)
+    if (!message.audioUrl || isUser) return
+
+    const audio = new Audio(message.audioUrl)
+    audioRef.current = audio
+
+    audio.oncanplaythrough = () => {
+      setAudioReady(true)
+
+      // Auto-play only once when audio is ready and autoPlay is enabled
+      if (autoPlay && !hasAutoPlayedRef.current) {
+        hasAutoPlayedRef.current = true
+        audio.play().catch(() => {
+          // Browser blocked autoplay - user will need to click play
+        })
+      }
+    }
+
+    audio.onplay = () => setIsPlaying(true)
+    audio.onpause = () => setIsPlaying(false)
+    audio.onended = () => setIsPlaying(false)
+    audio.onerror = () => {
+      setAudioReady(false)
+      setIsPlaying(false)
     }
 
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
-      }
+      audio.pause()
+      audio.src = ''
+      audioRef.current = null
     }
-  }, [message.audioUrl])
+  }, [message.audioUrl, autoPlay, isUser])
 
   const handlePlayAudio = () => {
-    if (!audioRef.current) return
+    if (!audioRef.current || !audioReady) return
 
     if (isPlaying) {
       audioRef.current.pause()
-      setIsPlaying(false)
     } else {
-      audioRef.current.play()
-      setIsPlaying(true)
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => {})
     }
   }
 
@@ -60,17 +79,24 @@ export default function ChatMessage({ message, characterName }) {
       {!isUser && message.audioUrl && (
         <button
           onClick={handlePlayAudio}
-          className="flex items-center gap-1.5 mt-2 text-xs text-text-muted hover:text-accent transition-colors"
+          disabled={!audioReady}
+          className={`
+            flex items-center gap-1.5 mt-2 text-xs transition-colors
+            ${audioReady
+              ? 'text-text-muted hover:text-accent'
+              : 'text-text-muted/50 cursor-not-allowed'
+            }
+          `}
         >
           {isPlaying ? (
             <>
-              <Pause className="w-3 h-3" />
+              <Volume2 className="w-3 h-3" />
               <span>Playing...</span>
             </>
           ) : (
             <>
               <Play className="w-3 h-3" />
-              <span>Play voice</span>
+              <span>{audioReady ? 'Play' : 'Loading...'}</span>
             </>
           )}
         </button>

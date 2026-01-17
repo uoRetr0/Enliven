@@ -17,6 +17,7 @@ export default function ChatSidebar({
   isLoading,
   width,
   onWidthChange,
+  audioEnabled,
 }) {
   const messagesEndRef = useRef(null)
   const [isResizing, setIsResizing] = useState(false)
@@ -100,11 +101,12 @@ export default function ChatSidebar({
               </div>
             ) : (
               <>
-                {messages.map((message) => (
+                {messages.map((message, index) => (
                   <ChatMessage
                     key={message.id}
                     message={message}
                     characterName={character.name}
+                    autoPlay={audioEnabled && index === messages.length - 1}
                   />
                 ))}
 

@@ -14,6 +14,7 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [totalCost, setTotalCost] = useState(0)
   const [hasExtracted, setHasExtracted] = useState(false)
+  const [audioEnabled, setAudioEnabled] = useState(true)
 
   const handleExtract = async (text) => {
     setIsLoading(true)
@@ -90,6 +91,7 @@ function App() {
         isLoading={isLoading && hasExtracted}
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
+        audioEnabled={audioEnabled}
       />
 
       {/* Main content */}
@@ -103,6 +105,8 @@ function App() {
             onToggleChat={handleToggleChat}
             isChatOpen={isChatOpen}
             showChatToggle={hasExtracted && selectedCharacter}
+            audioEnabled={audioEnabled}
+            onToggleAudio={() => setAudioEnabled(!audioEnabled)}
           />
 
           <div className="flex-1 overflow-hidden">

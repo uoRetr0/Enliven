@@ -60,6 +60,16 @@ class CostResponse(BaseModel):
     total: float
 
 
+class TranscribeRequest(BaseModel):
+    audio: str  # base64 encoded raw PCM audio
+    sample_rate: int = 16000
+    sample_width: int = 2  # 16-bit = 2 bytes
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+
+
 @app.post("/api/extract-characters", response_model=ExtractResponse)
 async def extract_characters(request: ExtractRequest):
     """Extract characters from book text."""
@@ -148,6 +158,32 @@ async def get_costs(session_id: str = ""):
         tts=total_tts,
         total=total_llm + total_tts,
     )
+
+
+@app.post("/api/transcribe", response_model=TranscribeResponse)
+async def transcribe(request: TranscribeRequest):
+    """Transcribe raw PCM audio to text using Google Speech Recognition (same as CLI)."""
+    import speech_recognition as sr
+
+    try:
+        # Decode base64 raw PCM audio
+        audio_data = base64.b64decode(request.audio)
+
+        # Create AudioData directly from raw PCM (same as cli.py)
+        audio = sr.AudioData(audio_data, request.sample_rate, request.sample_width)
+
+        # Transcribe using Google Web Speech API (free, no API key needed)
+        recognizer = sr.Recognizer()
+        text = recognizer.recognize_google(audio)
+
+        return TranscribeResponse(text=text)
+
+    except sr.UnknownValueError:
+        raise HTTPException(status_code=400, detail="Could not understand audio")
+    except sr.RequestError as e:
+        raise HTTPException(status_code=500, detail=f"Speech service error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
