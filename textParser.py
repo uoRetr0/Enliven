@@ -26,9 +26,11 @@ Rules:
   - Attribution tags ("Ron complained", "Hermione replied")
   - Scene descriptions ("his red hair falling into his eyes")
   - Narrative prose between dialogue
+  - character_name = null (ALWAYS)
 - thoughts count as character dialogue when attributed (e.g., "thought he", "thought the Wolf")
-- for thoughts, set character_name to the thinker and keep the quoted thought as character text
-- narrator -> character_name = null (ALWAYS)
+- for thoughts, set character_name to the thinker and keep the quoted thought as character text- narrator -> 
+- remove non-story boilerplate (headers/footers, publisher lines like "Free eBooks at Planet eBook.com", copyright notices)
+- if boilerplate appears at the start or end, drop it entirely; do not emit segments for it
 - character -> use the FULL NAME if known (e.g., "Harry Potter" not just "Harry"), otherwise use exactly what the text provides
 - if character speaker cannot be identified, use "Unknown"
 - Split text at quotation mark boundaries - do NOT combine narrator text with dialogue
@@ -40,21 +42,22 @@ Example input: "Hello," said John, walking slowly. "How are you?"
 Example output: {"segments":[{"speaker_type":"character","character_name":"John","text":"Hello,"},{"speaker_type":"narrator","character_name":null,"text":"said John, walking slowly."},{"speaker_type":"character","character_name":"John","text":"How are you?"}]}
 """
 
+
 def _extract_json(text: str):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         # Find JSON object with balanced braces
-        start = text.find('{')
+        start = text.find("{")
         if start == -1:
             raise
 
         depth = 0
         end = start
         for i, char in enumerate(text[start:], start):
-            if char == '{':
+            if char == "{":
                 depth += 1
-            elif char == '}':
+            elif char == "}":
                 depth -= 1
                 if depth == 0:
                     end = i + 1
@@ -119,7 +122,9 @@ def chunk_text(text: str, max_chars: int = 3000):
     return chunks
 
 
-def parse_passage(passage: str, model: str = DEFAULT_MODEL, client_override: OpenAI | None = None):
+def parse_passage(
+    passage: str, model: str = DEFAULT_MODEL, client_override: OpenAI | None = None
+):
     prompt = f'PASSAGE:\n"""{passage}"""'
 
     active_client = client_override or client
@@ -183,6 +188,8 @@ def parse_text_with_stats(
         "segments": segments,
         "total_characters": count_characters(segments),
     }
+
+
 def parse_text_to_file(
     text: str,
     output_path: str = "output/segments.json",
@@ -202,9 +209,3 @@ def parse_text_to_file(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return output_path
-
-if __name__ == "__main__":
-    sample = '''
-    Once upon a time a Wolf was lapping at a spring on a hillside, when, looking up, what should he see but a Lamb just beginning to drink a little lower down. ‘There’s my supper,’ thought he, ‘if only I can find some excuse to seize it.’ Then he called out to the Lamb, ‘How dare you muddle the water from which I am drinking?’ ‘Nay, master, nay,’ said Lambikin; ‘if the water be muddy up there, I cannot be the cause of it, for it runs down from you to me.’ ‘Well, then,’ said the Wolf, ‘why did you call me bad names this time last year?’ ‘That cannot be,’ said the Lamb; ‘I am only six months old.’ ‘I don’t care,’ snarled the Wolf; ‘if it was not you it was your father;’ and with that he rushed upon the poor little Lamb and ate her all up. But before she died she gasped out.’Any excuse will serve a tyrant.’
-    '''
-    print(parse_text_to_file(sample))
