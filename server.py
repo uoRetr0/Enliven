@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from character_chat import CharacterChat, Character, get_characters_from_audiobook
+from character_chat import CharacterChat, Character, get_characters_from_audiobook, extract_characters_from_text
 
 app = FastAPI(title="Enliven API")
 
@@ -70,13 +70,37 @@ class TranscribeResponse(BaseModel):
     text: str
 
 
+class AudiobookRequest(BaseModel):
+    text: str
+
+
+class WordTiming(BaseModel):
+    word: str
+    start: float
+    end: float
+
+
+class SegmentAudio(BaseModel):
+    speaker: str
+    audio_base64: str
+    words: list[WordTiming]
+
+
+class AudiobookResponse(BaseModel):
+    segments: list[SegmentAudio]
+
+
 @app.post("/api/extract-characters", response_model=ExtractResponse)
 async def extract_characters(request: ExtractRequest):
     """Extract characters from book text."""
     global characters_cache
 
-    # Get characters (currently returns stub data)
-    characters_cache = get_characters_from_audiobook()
+    # Extract real characters from text
+    characters_cache = extract_characters_from_text(request.text)
+
+    # Fallback if no characters found
+    if not characters_cache:
+        characters_cache = get_characters_from_audiobook()
 
     # Create new session
     session_id = str(uuid.uuid4())
@@ -182,6 +206,94 @@ async def transcribe(request: TranscribeRequest):
         raise HTTPException(status_code=400, detail="Could not understand audio")
     except sr.RequestError as e:
         raise HTTPException(status_code=500, detail=f"Speech service error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Voice map for audiobook generation (shared across requests)
+_audiobook_voice_map: dict[str, str] = {}
+_narrator_voice_id: str | None = None
+
+
+def _get_voice_for_speaker(speaker: str) -> str:
+    """Get or assign a voice for a speaker."""
+    global _narrator_voice_id
+    from elevenlabs import ElevenLabs
+
+    if speaker in _audiobook_voice_map:
+        return _audiobook_voice_map[speaker]
+
+    elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+    response = elevenlabs.voices.get_all()
+    voices = response.voices
+
+    if not voices:
+        raise ValueError("No ElevenLabs voices available.")
+
+    # Find a good narrator voice (prefer one labeled for narration/audiobooks)
+    if speaker == "narrator":
+        if _narrator_voice_id is None:
+            # Look for a voice suitable for narration
+            narrator_keywords = ["narrator", "audiobook", "story", "neutral"]
+            for voice in voices:
+                labels = voice.labels or {}
+                use_case = labels.get("use_case", "").lower()
+                description = labels.get("description", "").lower()
+                name_lower = voice.name.lower()
+
+                if any(kw in use_case or kw in description or kw in name_lower for kw in narrator_keywords):
+                    _narrator_voice_id = voice.voice_id
+                    break
+
+            # Fallback to first voice if no narrator-specific voice found
+            if _narrator_voice_id is None:
+                _narrator_voice_id = voices[0].voice_id
+
+        _audiobook_voice_map["narrator"] = _narrator_voice_id
+        return _narrator_voice_id
+
+    # For characters, exclude the narrator voice and pick from remaining
+    voice_ids = [v.voice_id for v in voices if v.voice_id != _narrator_voice_id]
+
+    if not voice_ids:
+        # Fallback if all voices were filtered out
+        voice_ids = [v.voice_id for v in voices]
+
+    # Deterministic voice selection based on speaker name
+    score = sum(ord(ch) for ch in speaker.lower())
+    voice_id = voice_ids[score % len(voice_ids)]
+    _audiobook_voice_map[speaker] = voice_id
+
+    return voice_id
+
+
+@app.post("/api/generate-audiobook", response_model=AudiobookResponse)
+async def generate_audiobook_endpoint(request: AudiobookRequest):
+    """Generate audiobook with word-level timestamps for highlighting."""
+    from textParser import parse_text
+    from tts_generator import generate_segment_with_timestamps
+
+    try:
+        segments = parse_text(request.text)
+
+        result_segments = []
+        for seg in segments:
+            speaker = seg.get("character_name") or "narrator"
+            voice_id = _get_voice_for_speaker(speaker)
+
+            audio_data = generate_segment_with_timestamps(
+                text=seg["text"],
+                voice_id=voice_id
+            )
+
+            result_segments.append(SegmentAudio(
+                speaker=speaker,
+                audio_base64=audio_data["audio_base64"],
+                words=[WordTiming(**w) for w in audio_data["words"]]
+            ))
+
+        return AudiobookResponse(segments=result_segments)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
