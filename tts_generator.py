@@ -197,3 +197,60 @@ def generate_audiobook_mp3(
         model_id=model_id,
         output_format="mp3_44100_128",
     )
+
+
+def generate_segment_with_timestamps(
+    text: str,
+    voice_id: str,
+    model_id: str = "eleven_multilingual_v2",
+) -> dict:
+    """Generate audio with word-level timestamps."""
+    import base64
+
+    elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+
+    response = elevenlabs.text_to_speech.convert_with_timestamps(
+        voice_id=voice_id,
+        text=text,
+        model_id=model_id,
+    )
+
+    # Convert character timestamps to word timestamps
+    words = []
+    if hasattr(response, 'alignment') and response.alignment:
+        chars = response.alignment.characters
+        starts = response.alignment.character_start_times_seconds
+        ends = response.alignment.character_end_times_seconds
+
+        current_word = ""
+        word_start = None
+        for i, char in enumerate(chars):
+            if char == " " or i == len(chars) - 1:
+                if current_word:
+                    if i == len(chars) - 1 and char != " ":
+                        current_word += char
+                    words.append({
+                        "word": current_word,
+                        "start": word_start,
+                        "end": ends[i - 1] if char == " " else ends[i]
+                    })
+                current_word = ""
+                word_start = None
+            else:
+                if word_start is None:
+                    word_start = starts[i]
+                current_word += char
+
+    # Extract audio data from response
+    # Note: ElevenLabs SDK uses 'audio_base_64' (with underscore before 64)
+    audio_base64 = ""
+
+    if hasattr(response, 'audio_base_64') and response.audio_base_64:
+        audio_base64 = response.audio_base_64
+    elif hasattr(response, 'audio_base64') and response.audio_base64:
+        audio_base64 = response.audio_base64
+
+    return {
+        "audio_base64": audio_base64,
+        "words": words
+    }

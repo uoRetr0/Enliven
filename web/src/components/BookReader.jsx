@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Upload, FileText, Loader2 } from 'lucide-react'
+import { Upload, FileText, Loader2, Play, Pause, Volume2 } from 'lucide-react'
 import CharacterPill from './CharacterPill'
 
 export default function BookReader({
@@ -16,6 +16,14 @@ export default function BookReader({
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState(null)
   const fileInputRef = useRef(null)
+
+  // Audiobook state
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [audiobookData, setAudiobookData] = useState(null)
+  const [currentSegment, setCurrentSegment] = useState(0)
+  const [currentWordIndex, setCurrentWordIndex] = useState(-1)
+  const [isGeneratingAudiobook, setIsGeneratingAudiobook] = useState(false)
+  const audioRef = useRef(null)
 
   const handleDragOver = (e) => {
     e.preventDefault()
@@ -73,6 +81,119 @@ Professor Dumbledore stood at the head table, his long silver beard catching the
 
     setText(sample)
     setFileName('sample-text.txt')
+  }
+
+  // Audiobook functions
+  const handleGenerateAudiobook = async () => {
+    if (!bookText.trim()) return
+    setIsGeneratingAudiobook(true)
+
+    try {
+      const response = await fetch('http://localhost:8000/api/generate-audiobook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: bookText })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to generate audiobook')
+      }
+
+      const data = await response.json()
+      setAudiobookData(data)
+      setCurrentSegment(0)
+      setCurrentWordIndex(-1)
+    } catch (error) {
+      console.error('Failed to generate audiobook:', error)
+      alert('Failed to generate audiobook: ' + error.message)
+    } finally {
+      setIsGeneratingAudiobook(false)
+    }
+  }
+
+  const handleTimeUpdate = () => {
+    if (!audiobookData || !audioRef.current) return
+    const currentTime = audioRef.current.currentTime
+    const segment = audiobookData.segments[currentSegment]
+    if (!segment || !segment.words) return
+
+    // Find current word based on time
+    const wordIdx = segment.words.findIndex(
+      (w, i, arr) => currentTime >= w.start &&
+        (i === arr.length - 1 || currentTime < arr[i + 1].start)
+    )
+    setCurrentWordIndex(wordIdx)
+  }
+
+  const handleSegmentEnd = () => {
+    if (!audiobookData) return
+    if (currentSegment < audiobookData.segments.length - 1) {
+      setCurrentSegment(prev => prev + 1)
+      setCurrentWordIndex(-1)
+    } else {
+      setIsPlaying(false)
+      setCurrentSegment(0)
+      setCurrentWordIndex(-1)
+    }
+  }
+
+  // When audio is ready and we're supposed to be playing, start playback
+  // This handles segment transitions where we need to wait for new audio to load
+  const handleCanPlay = () => {
+    if (isPlaying && audioRef.current) {
+      audioRef.current.play().catch(err => {
+        console.error('Play on canplay failed:', err)
+      })
+    }
+  }
+
+  // Toggle play/pause - direct control from click handler (required for autoplay policy)
+  const togglePlayPause = () => {
+    console.log('togglePlayPause called', { audiobookData: !!audiobookData, audioRef: !!audioRef.current, isPlaying })
+
+    if (!audiobookData) {
+      console.log('No audiobook data')
+      return
+    }
+
+    // Audio ref might not be set yet on first render, set state and let onCanPlay handle it
+    if (!audioRef.current) {
+      console.log('No audio ref, setting isPlaying true')
+      setIsPlaying(true)
+      return
+    }
+
+    if (isPlaying) {
+      console.log('Pausing')
+      audioRef.current.pause()
+      setIsPlaying(false)
+    } else {
+      const segment = audiobookData.segments[currentSegment]
+      console.log('Playing segment:', currentSegment, 'audio_base64 length:', segment?.audio_base64?.length || 0)
+      console.log('Audio src:', audioRef.current.src?.substring(0, 100))
+      // Must call play() directly in click handler for browser autoplay policy
+      audioRef.current.play()
+        .then(() => {
+          console.log('Play succeeded')
+          setIsPlaying(true)
+        })
+        .catch(err => {
+          console.error('Play failed:', err)
+          // Still set playing true so onCanPlay can retry when audio is ready
+          setIsPlaying(true)
+        })
+    }
+  }
+
+  // Build word index map for highlighting across all segments
+  const getGlobalWordIndex = () => {
+    if (!audiobookData || currentWordIndex < 0) return -1
+    let globalIndex = 0
+    for (let i = 0; i < currentSegment; i++) {
+      globalIndex += audiobookData.segments[i].words?.length || 0
+    }
+    return globalIndex + currentWordIndex
   }
 
   // Upload state
@@ -195,19 +316,122 @@ Professor Dumbledore stood at the head table, his long silver beard catching the
   }
 
   // Reader state - show book text and characters
+  const globalWordIndex = getGlobalWordIndex()
+
+  // Render text with word highlighting when audiobook is active
+  const renderTextWithHighlighting = () => {
+    if (!audiobookData) {
+      // No audiobook - render plain paragraphs
+      return bookText.split('\n\n').map((paragraph, index) => (
+        <p
+          key={index}
+          className="text-text-primary leading-relaxed mb-4 last:mb-0"
+        >
+          {paragraph}
+        </p>
+      ))
+    }
+
+    // Audiobook active - render with word highlighting
+    let wordCounter = 0
+    return bookText.split('\n\n').map((paragraph, pIndex) => (
+      <p
+        key={pIndex}
+        className="text-text-primary leading-relaxed mb-4 last:mb-0"
+      >
+        {paragraph.split(/\s+/).map((word, wIndex) => {
+          const currentWordCounter = wordCounter
+          wordCounter++
+          return (
+            <span
+              key={wIndex}
+              className={`transition-colors duration-150 ${
+                currentWordCounter === globalWordIndex
+                  ? 'bg-accent/30 rounded px-0.5'
+                  : ''
+              }`}
+            >
+              {word}{' '}
+            </span>
+          )
+        })}
+      </p>
+    ))
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {/* Audiobook controls */}
+      <div className="flex items-center gap-3 mb-4">
+        {!audiobookData ? (
+          <button
+            onClick={handleGenerateAudiobook}
+            disabled={isGeneratingAudiobook || !bookText.trim()}
+            className={`
+              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
+              ${isGeneratingAudiobook || !bookText.trim()
+                ? 'bg-bg-card text-text-muted cursor-not-allowed'
+                : 'bg-bg-card hover:bg-bg-secondary text-text-primary border border-white/10 hover:border-white/20'
+              }
+            `}
+          >
+            {isGeneratingAudiobook ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-4 h-4" />
+                <span>Generate Audiobook</span>
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={togglePlayPause}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-accent hover:bg-accent-dim text-white transition-all"
+          >
+            {isPlaying ? (
+              <>
+                <Pause className="w-4 h-4" />
+                <span>Pause</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                <span>Play</span>
+              </>
+            )}
+          </button>
+        )}
+
+        {audiobookData && (
+          <span className="text-xs text-text-muted">
+            Segment {currentSegment + 1} / {audiobookData.segments.length}
+          </span>
+        )}
+      </div>
+
+      {/* Hidden audio element */}
+      {audiobookData && (
+        <audio
+          ref={audioRef}
+          src={
+            audiobookData.segments[currentSegment]?.audio_base64
+              ? `data:audio/mpeg;base64,${audiobookData.segments[currentSegment].audio_base64}`
+              : undefined
+          }
+          onCanPlay={handleCanPlay}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleSegmentEnd}
+        />
+      )}
+
       {/* Book text area */}
       <div className="flex-1 overflow-y-auto rounded-2xl bg-bg-secondary border border-white/5 p-6 mb-4">
         <div className="prose prose-invert max-w-none">
-          {bookText.split('\n\n').map((paragraph, index) => (
-            <p
-              key={index}
-              className="text-text-primary leading-relaxed mb-4 last:mb-0"
-            >
-              {paragraph}
-            </p>
-          ))}
+          {renderTextWithHighlighting()}
         </div>
       </div>
 

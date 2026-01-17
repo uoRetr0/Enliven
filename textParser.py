@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -21,10 +22,11 @@ Return JSON: {"segments":[{"speaker_type":"narrator" or "character","character_n
 Rules:
 - narrator = non-dialogue description
 - character = spoken dialogue
-- thoughts count as character dialogue when attributed (e.g., “thought he”, “thought the Wolf”)
+- thoughts count as character dialogue when attributed (e.g., "thought he", "thought the Wolf")
 - for thoughts, set character_name to the thinker and keep the quoted thought as character text
 - narrator -> character_name = null
-- character -> name if obvious else "Unknown"
+- character -> use the FULL NAME if known (e.g., "Harry Potter" not just "Harry"), otherwise use exactly what the text provides
+- if speaker cannot be identified, use "Unknown"
 - keep quotation marks
 - keep order
 - return ONLY valid JSON, no text outside JSON
@@ -34,10 +36,24 @@ def _extract_json(text: str):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not match:
+        # Find JSON object with balanced braces
+        start = text.find('{')
+        if start == -1:
             raise
-        return json.loads(match.group(0))
+
+        depth = 0
+        end = start
+        for i, char in enumerate(text[start:], start):
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+
+        json_str = text[start:end]
+        return json.loads(json_str)
 
 
 def _split_paragraph(paragraph: str, max_chars: int):
@@ -118,9 +134,24 @@ def parse_text(
     max_chars: int = 3000,
     client_override: OpenAI | None = None,
 ):
+    chunks = chunk_text(text, max_chars=max_chars)
+    if not chunks:
+        return []
+
+    results = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_idx = {
+            executor.submit(parse_passage, chunk, model, client_override): idx
+            for idx, chunk in enumerate(chunks)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
+
     segments = []
-    for chunk in chunk_text(text, max_chars=max_chars):
-        segments.extend(parse_passage(chunk, model=model, client_override=client_override))
+    for result in results:
+        if result:
+            segments.extend(result)
     return segments
 
 

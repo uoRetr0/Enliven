@@ -8,7 +8,7 @@ function App() {
   const [bookText, setBookText] = useState('')
   const [characters, setCharacters] = useState([])
   const [selectedCharacter, setSelectedCharacter] = useState(null)
-  const [messages, setMessages] = useState([])
+  const [messagesByCharacter, setMessagesByCharacter] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(320)
@@ -33,19 +33,22 @@ function App() {
 
   const handleSelectCharacter = (character) => {
     setSelectedCharacter(character)
-    setMessages([])
     setIsChatOpen(true)
   }
 
   const handleSendMessage = async (text) => {
     if (!text.trim() || !selectedCharacter) return
 
+    const charId = selectedCharacter.id
     const userMessage = {
       id: Date.now(),
       role: 'user',
       content: text,
     }
-    setMessages(prev => [...prev, userMessage])
+    setMessagesByCharacter(prev => ({
+      ...prev,
+      [charId]: [...(prev[charId] || []), userMessage]
+    }))
     setIsLoading(true)
 
     try {
@@ -57,7 +60,10 @@ function App() {
         content: response.text,
         audioUrl: response.audioUrl,
       }
-      setMessages(prev => [...prev, charMessage])
+      setMessagesByCharacter(prev => ({
+        ...prev,
+        [charId]: [...(prev[charId] || []), charMessage]
+      }))
 
       // Fetch real costs from backend
       const costs = await getCosts()
@@ -86,7 +92,7 @@ function App() {
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
         character={selectedCharacter}
-        messages={messages}
+        messages={selectedCharacter ? (messagesByCharacter[selectedCharacter.id] || []) : []}
         onSend={handleSendMessage}
         isLoading={isLoading && hasExtracted}
         width={sidebarWidth}
