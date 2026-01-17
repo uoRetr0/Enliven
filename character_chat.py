@@ -19,7 +19,7 @@ _extraction_client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
-_extraction_model = "google/gemini-2.0-flash-001"
+_extraction_model = "google/gemini-3-flash-preview"
 
 
 @dataclass
@@ -59,21 +59,42 @@ def get_characters_from_audiobook() -> list[Character]:
     ]
 
 
+def _select_representative_dialogues(dialogues: list[str], max_samples: int = 30) -> list[str]:
+    """Select representative dialogues from beginning, middle, and end."""
+    if len(dialogues) <= max_samples:
+        return dialogues
+    n = len(dialogues)
+    # Take from beginning, middle, and end for better coverage
+    indices = (
+        list(range(0, min(10, n))) +
+        list(range(n // 2 - 5, n // 2 + 5)) +
+        list(range(max(0, n - 10), n))
+    )
+    return [dialogues[i] for i in sorted(set(indices)) if i < n]
+
+
 def _generate_character_profile(name: str, dialogues: list[str]) -> dict:
     """Use LLM to create character profile from dialogue + literary knowledge."""
-    sample = "\n".join(dialogues[:10])  # Limit to first 10 lines
+    selected = _select_representative_dialogues(dialogues, max_samples=30)
+    sample = "\n".join(selected)
 
-    prompt = f"""Create a character profile for "{name}".
+    prompt = f"""Create a detailed character profile for "{name}".
 
-Use these dialogue samples from the text:
+Use these dialogue samples from the text (from beginning, middle, and end of the story):
 {sample}
 
 IMPORTANT: If this is a well-known literary character (e.g., Sherlock Holmes, Elizabeth Bennet, Hamlet),
 use your knowledge of that character to enrich the profile with accurate details from the original work.
 Combine textual evidence with literary knowledge for the best result.
 
+Analyze the dialogue for:
+- Speech patterns (formal/informal, sentence structure, vocabulary level)
+- Emotional range (how they express joy, anger, sadness, etc.)
+- Distinctive verbal tics or catchphrases
+- How their speech changes in different situations
+
 Return JSON only with string values (not nested objects):
-{{"description": "physical appearance and voice quality as a single string", "personality": "speaking style, mannerisms, traits as a single string", "backstory": "background, motivations, relationships as a single string"}}"""
+{{"description": "physical appearance and voice quality as a single string", "personality": "speaking style, mannerisms, speech patterns, emotional expression, and character traits as a single string", "backstory": "background, motivations, relationships, and character arc as a single string"}}"""
 
     response = _extraction_client.chat.completions.create(
         model=_extraction_model,
@@ -103,6 +124,60 @@ Return JSON only with string values (not nested objects):
             data[key] = next(iter(data[key].values()), f"Unknown {key}")
 
     return data
+
+
+def _is_unknown_character(name: str) -> bool:
+    """Check if a character name represents an unknown/generic speaker."""
+    normalized = name.strip().lower()
+    unknown_patterns = ["unknown", "narrator", "unidentified", "speaker", "voice"]
+    return any(pattern in normalized for pattern in unknown_patterns)
+
+
+def _preprocess_character_names(names: list[str]) -> dict[str, str]:
+    """Quick substring-based merging before LLM call for obvious matches."""
+    if not names:
+        return {}
+
+    # Sort by length descending so longer names are processed first
+    sorted_names = sorted(names, key=len, reverse=True)
+    canonical_map: dict[str, str] = {}  # Maps normalized form to canonical name
+
+    for name in sorted_names:
+        lower = name.lower().strip()
+        matched = False
+
+        for existing_name, canonical_lower in list(canonical_map.items()):
+            # Check if one is substring of the other
+            if lower in canonical_lower or canonical_lower in lower:
+                # Use the longer name as canonical
+                if len(name) > len(existing_name):
+                    # Update canonical to use this longer name
+                    canonical_map[name] = lower
+                    # Update all names that pointed to the old canonical
+                    for k, v in list(canonical_map.items()):
+                        if v == canonical_lower:
+                            canonical_map[k] = lower
+                else:
+                    canonical_map[name] = canonical_lower
+                matched = True
+                break
+
+        if not matched:
+            canonical_map[name] = lower
+
+    # Build final mapping: name -> canonical name (the longest one)
+    result: dict[str, str] = {}
+    for name in names:
+        canonical_lower = canonical_map.get(name, name.lower())
+        # Find the longest name that maps to this canonical form
+        canonical_name = max(
+            (n for n in names if canonical_map.get(n) == canonical_lower),
+            key=len,
+            default=name
+        )
+        result[name] = canonical_name
+
+    return result
 
 
 def _normalize_character_names(
@@ -181,10 +256,19 @@ def extract_characters_from_text(text: str) -> list[Character]:
     for seg in segments:
         if seg["speaker_type"] == "character" and seg.get("character_name"):
             name = seg["character_name"]
-            if name not in ["Unknown", "unknown"]:
+            if not _is_unknown_character(name):
                 character_dialogue.setdefault(name, []).append(seg["text"])
 
-    # Normalize character names to merge variants
+    # Pre-process character names with deterministic substring matching
+    # This handles obvious cases like "Harry" -> "Harry Potter" before LLM call
+    preprocess_map = _preprocess_character_names(list(character_dialogue.keys()))
+    preprocessed_dialogue: dict[str, list[str]] = {}
+    for name, dialogues in character_dialogue.items():
+        canonical = preprocess_map.get(name, name)
+        preprocessed_dialogue.setdefault(canonical, []).extend(dialogues)
+    character_dialogue = preprocessed_dialogue
+
+    # Use LLM normalization for remaining ambiguous cases
     character_dialogue = _normalize_character_names(character_dialogue)
 
     # Generate character profiles using LLM in parallel
@@ -253,7 +337,7 @@ class CharacterChat:
             base_url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY"),
         )
-        self.model = "google/gemini-2.0-flash-001"
+        self.model = "google/gemini-3-flash-preview"
 
         self.elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
         self.current_character: Character | None = None

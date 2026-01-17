@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Upload, FileText, Loader2, Play, Pause, Volume2 } from 'lucide-react'
+import { Upload, FileText, Loader2, Play, Pause, Volume2, RefreshCw } from 'lucide-react'
 import CharacterPill from './CharacterPill'
 
 export default function BookReader({
@@ -90,23 +90,38 @@ export default function BookReader({
   }
 
   const loadSampleText = () => {
-    const sample = `The great hall of Hogwarts was filled with the chatter of students. Harry Potter sat between Ron Weasley and Hermione Granger at the Gryffindor table.
+    const sample = `"Will you buy my hair?" asked Della.
 
-"I can't believe Snape gave us that much homework," Ron complained, his red hair falling into his eyes. "It's like he wants us to fail."
+"I buy hair," said Madame Sofronie. "Take yer hat off and let's have a sight at the looks of it."
 
-"If you'd actually paid attention in class, Ronald, you'd know it's not that difficult," Hermione said primly, already pulling out her books.
+"Twenty dollars," said Madame Sofronie, lifting the mass with a practised hand.
 
-Harry just smiled. After years of living with the Dursleys, any amount of homework was worth it to be here, at Hogwarts, with his friends. He still remembered the day Hagrid had burst into that hut on the rock and told him he was a wizard.
+"Give it to me quick," said Della.
 
-Professor Dumbledore stood at the head table, his long silver beard catching the candlelight. His blue eyes twinkled behind half-moon spectacles as he watched the students with a knowing smile.`
+The door opened and Jim stepped in. His eyes were fixed upon Della with an expression she could not read.
+
+"Jim, darling," she cried, "don't look at me that way. I had my hair cut off and sold it. Say 'Merry Christmas!' Jim, and let's be happy."
+
+"You've cut off your hair?" asked Jim.
+
+"Cut it off and sold it," said Della. "Don't you like me just as well, anyhow?"
+
+Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Christmas presents away. I sold the watch to get the money to buy your combs."`
 
     setText(sample)
-    setFileName('sample-text.txt')
+    setFileName('gift-of-the-magi.txt')
   }
 
   // Audiobook functions
   const handleGenerateAudiobook = async () => {
     if (!bookText.trim()) return
+
+    // Clear existing audiobook first
+    setAudiobookData(null)
+    setCurrentSegment(0)
+    setCurrentWordIndex(-1)
+    setIsPlaying(false)
+
     setIsGeneratingAudiobook(true)
 
     try {
@@ -428,9 +443,19 @@ Professor Dumbledore stood at the head table, his long silver beard catching the
         )}
 
         {audiobookData && (
-          <span className="text-xs text-text-muted">
-            Segment {currentSegment + 1} / {audiobookData.segments.length}
-          </span>
+          <>
+            <button
+              onClick={handleGenerateAudiobook}
+              disabled={isGeneratingAudiobook}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-bg-card hover:bg-bg-secondary text-text-secondary border border-white/10 hover:border-white/20 transition-all"
+              title="Regenerate audiobook"
+            >
+              <RefreshCw className={`w-4 h-4 ${isGeneratingAudiobook ? 'animate-spin' : ''}`} />
+            </button>
+            <span className="text-xs text-text-muted">
+              Segment {currentSegment + 1} / {audiobookData.segments.length}
+            </span>
+          </>
         )}
       </div>
 

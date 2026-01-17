@@ -8,7 +8,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -20,26 +20,26 @@ You get one passage from a book.
 Return JSON: {"segments":[{"speaker_type":"narrator" or "character","character_name":string or null,"text":string}]}
 
 Rules:
-- character = ONLY text inside quotation marks (the actual spoken words)
-- narrator = EVERYTHING outside quotation marks, including:
-  - Action descriptions ("he said", "she shouted angrily")
-  - Attribution tags ("Ron complained", "Hermione replied")
-  - Scene descriptions ("his red hair falling into his eyes")
-  - Narrative prose between dialogue
-  - character_name = null (ALWAYS)
-- thoughts count as character dialogue when attributed (e.g., "thought he", "thought the Wolf")
-- for thoughts, set character_name to the thinker and keep the quoted thought as character text- narrator -> 
-- remove non-story boilerplate (headers/footers, publisher lines like "Free eBooks at Planet eBook.com", copyright notices)
-- if boilerplate appears at the start or end, drop it entirely; do not emit segments for it
-- character -> use the FULL NAME if known (e.g., "Harry Potter" not just "Harry"), otherwise use exactly what the text provides
+- character = ONLY the words inside quotation marks (spoken/thought words only)
+- narrator = ONLY the words outside quotation marks (attribution, action, description)
+- CRITICAL: Never duplicate text! Each word appears in exactly ONE segment
+- CRITICAL: Narrator text must NOT contain any quoted dialogue - only what's OUTSIDE the quotes
+- narrator -> character_name = null (ALWAYS)
+- thoughts count as character dialogue when in quotes and attributed
+- for thoughts, set character_name to the thinker
+- character -> use the FULL NAME if known (e.g., "Harry Potter" not just "Harry")
 - if character speaker cannot be identified, use "Unknown"
-- Split text at quotation mark boundaries - do NOT combine narrator text with dialogue
+- Split text at quotation mark boundaries
 - Do NOT include quotation marks in the text field
+- remove non-story boilerplate (headers/footers, publisher lines, copyright notices)
 - keep original order
-- return ONLY valid JSON, no text outside JSON
+- return ONLY valid JSON
 
 Example input: "Hello," said John, walking slowly. "How are you?"
 Example output: {"segments":[{"speaker_type":"character","character_name":"John","text":"Hello,"},{"speaker_type":"narrator","character_name":null,"text":"said John, walking slowly."},{"speaker_type":"character","character_name":"John","text":"How are you?"}]}
+
+WRONG (duplicates dialogue in narrator): {"segments":[{"speaker_type":"narrator","character_name":null,"text":"\"Hello,\" said John"}]}
+RIGHT (splits at quote boundary): {"segments":[{"speaker_type":"character","character_name":"John","text":"Hello,"},{"speaker_type":"narrator","character_name":null,"text":"said John"}]}
 """
 
 
@@ -122,6 +122,56 @@ def chunk_text(text: str, max_chars: int = 3000):
     return chunks
 
 
+def _remove_quoted_overlap(narrator_text: str, adjacent_text: str) -> str:
+    """Remove quoted dialogue from narrator text if it appears in adjacent segment."""
+    if not adjacent_text:
+        return narrator_text
+
+    # Find all quoted content in narrator text
+    quotes = re.findall(r'["\u201c\u201d]([^"\u201c\u201d]+)["\u201c\u201d]', narrator_text)
+
+    result = narrator_text
+    for quote in quotes:
+        # If the quote (or similar) appears in adjacent character dialogue, remove it
+        if quote.strip() in adjacent_text or adjacent_text.strip() in quote:
+            # Remove the quoted portion including surrounding quotes
+            result = re.sub(
+                rf'["\u201c\u201d]{re.escape(quote)}["\u201c\u201d]\s*',
+                '',
+                result
+            )
+
+    return result.strip()
+
+
+def _deduplicate_segments(segments: list[dict]) -> list[dict]:
+    """Remove quoted text that appears in both narrator and character segments."""
+    if not segments:
+        return segments
+
+    cleaned = []
+    for i, seg in enumerate(segments):
+        text = seg.get("text", "").strip()
+
+        if seg.get("speaker_type") == "narrator" and text:
+            # Check previous segment for overlap
+            if cleaned:
+                prev = cleaned[-1]
+                if prev.get("speaker_type") == "character":
+                    text = _remove_quoted_overlap(text, prev.get("text", ""))
+
+            # Check next segment for overlap
+            if i + 1 < len(segments):
+                next_seg = segments[i + 1]
+                if next_seg.get("speaker_type") == "character":
+                    text = _remove_quoted_overlap(text, next_seg.get("text", ""))
+
+        if text:
+            cleaned.append({**seg, "text": text})
+
+    return cleaned
+
+
 def parse_passage(
     passage: str, model: str = DEFAULT_MODEL, client_override: OpenAI | None = None
 ):
@@ -165,6 +215,9 @@ def parse_text(
     for result in results:
         if result:
             segments.extend(result)
+
+    # Post-process to remove duplicated dialogue
+    segments = _deduplicate_segments(segments)
     return segments
 
 
