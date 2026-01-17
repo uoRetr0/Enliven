@@ -25,6 +25,7 @@ _extraction_model = "google/gemini-2.0-flash-001"
 @dataclass
 class Character:
     """Represents a book character with their personality and voice."""
+
     name: str
     description: str
     personality: str
@@ -104,7 +105,9 @@ Return JSON only with string values (not nested objects):
     return data
 
 
-def _normalize_character_names(character_dialogue: dict[str, list[str]]) -> dict[str, list[str]]:
+def _normalize_character_names(
+    character_dialogue: dict[str, list[str]],
+) -> dict[str, list[str]]:
     """Merge character name variants (e.g., 'Harry' and 'Harry Potter')."""
     # Build list of all names
     names = list(character_dialogue.keys())
@@ -133,16 +136,16 @@ Rules:
         data = json.loads(content)
     except json.JSONDecodeError:
         # Find JSON object with balanced braces
-        start = content.find('{')
+        start = content.find("{")
         if start == -1:
             return character_dialogue  # Fallback: no normalization
 
         depth = 0
         end = start
         for i, char in enumerate(content[start:], start):
-            if char == '{':
+            if char == "{":
                 depth += 1
-            elif char == '}':
+            elif char == "}":
                 depth -= 1
                 if depth == 0:
                     end = i + 1
@@ -194,12 +197,14 @@ def extract_characters_from_text(text: str) -> list[Character]:
         for future in as_completed(future_to_name):
             name = future_to_name[future]
             profile = future.result()
-            characters.append(Character(
-                name=name,
-                description=profile.get("description", f"A character named {name}"),
-                personality=profile.get("personality", "Speaks naturally"),
-                backstory=profile.get("backstory", "A character from the story"),
-            ))
+            characters.append(
+                Character(
+                    name=name,
+                    description=profile.get("description", f"A character named {name}"),
+                    personality=profile.get("personality", "Speaks naturally"),
+                    backstory=profile.get("backstory", "A character from the story"),
+                )
+            )
 
     return characters
 
@@ -207,19 +212,22 @@ def extract_characters_from_text(text: str) -> list[Character]:
 @dataclass
 class CostTracker:
     """Tracks API usage costs."""
+
     openrouter_input_tokens: int = 0
     openrouter_output_tokens: int = 0
     elevenlabs_characters: int = 0
 
     # Pricing (per token/character)
-    OPENROUTER_INPUT_PRICE = 0.10 / 1_000_000   # $0.10 per 1M tokens (Gemini Flash)
+    OPENROUTER_INPUT_PRICE = 0.10 / 1_000_000  # $0.10 per 1M tokens (Gemini Flash)
     OPENROUTER_OUTPUT_PRICE = 0.40 / 1_000_000  # $0.40 per 1M tokens (Gemini Flash)
-    ELEVENLABS_CHAR_PRICE = 0.30 / 1_000        # ~$0.30 per 1K chars (varies by plan)
+    ELEVENLABS_CHAR_PRICE = 0.30 / 1_000  # ~$0.30 per 1K chars (varies by plan)
 
     @property
     def openrouter_cost(self) -> float:
-        return (self.openrouter_input_tokens * self.OPENROUTER_INPUT_PRICE +
-                self.openrouter_output_tokens * self.OPENROUTER_OUTPUT_PRICE)
+        return (
+            self.openrouter_input_tokens * self.OPENROUTER_INPUT_PRICE
+            + self.openrouter_output_tokens * self.OPENROUTER_OUTPUT_PRICE
+        )
 
     @property
     def elevenlabs_cost(self) -> float:
@@ -230,9 +238,11 @@ class CostTracker:
         return self.openrouter_cost + self.elevenlabs_cost
 
     def __str__(self) -> str:
-        return (f"LLM: {self.openrouter_input_tokens}+{self.openrouter_output_tokens} tokens (${self.openrouter_cost:.4f}) | "
-                f"TTS: {self.elevenlabs_characters} chars (${self.elevenlabs_cost:.4f}) | "
-                f"Total: ${self.total_cost:.4f}")
+        return (
+            f"LLM: {self.openrouter_input_tokens}+{self.openrouter_output_tokens} tokens (${self.openrouter_cost:.4f}) | "
+            f"TTS: {self.elevenlabs_characters} chars (${self.elevenlabs_cost:.4f}) | "
+            f"Total: ${self.total_cost:.4f}"
+        )
 
 
 class CharacterChat:
@@ -258,25 +268,29 @@ class CharacterChat:
             self._voices_cache = []
             for v in response.voices:
                 labels = v.labels or {}
-                self._voices_cache.append({
-                    "voice_id": v.voice_id,
-                    "name": v.name,
-                    "gender": labels.get("gender", "unknown"),
-                    "age": labels.get("age", "unknown"),
-                    "accent": labels.get("accent", "unknown"),
-                    "description": labels.get("description", ""),
-                    "use_case": labels.get("use_case", ""),
-                })
+                self._voices_cache.append(
+                    {
+                        "voice_id": v.voice_id,
+                        "name": v.name,
+                        "gender": labels.get("gender", "unknown"),
+                        "age": labels.get("age", "unknown"),
+                        "accent": labels.get("accent", "unknown"),
+                        "description": labels.get("description", ""),
+                        "use_case": labels.get("use_case", ""),
+                    }
+                )
         return self._voices_cache
 
     def _pick_voice_for_character(self, character: Character) -> str:
         """Use LLM to pick the best fitting voice for a character."""
         voices = self._get_available_voices()
 
-        voices_desc = "\n".join([
-            f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}"
-            for v in voices
-        ])
+        voices_desc = "\n".join(
+            [
+                f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}"
+                for v in voices
+            ]
+        )
 
         prompt = f"""Pick the best voice for this character. Return ONLY the voice_id, nothing else.
 
@@ -307,7 +321,9 @@ Return only the voice_id that best matches the character's gender, age, and pers
         if voice_id not in valid_ids:
             # Fallback to first voice matching gender
             char_text = f"{character.description} {character.name}".lower()
-            is_female = any(w in char_text for w in ["woman", "female", "girl", "she", "her"])
+            is_female = any(
+                w in char_text for w in ["woman", "female", "girl", "she", "her"]
+            )
             for v in voices:
                 if is_female and v["gender"] == "female":
                     return v["voice_id"]
@@ -324,7 +340,10 @@ Return only the voice_id that best matches the character's gender, age, and pers
             character.voice_id = self._pick_voice_for_character(character)
             # Find voice name for display
             voices = self._get_available_voices()
-            voice_name = next((v["name"] for v in voices if v["voice_id"] == character.voice_id), "Unknown")
+            voice_name = next(
+                (v["name"] for v in voices if v["voice_id"] == character.voice_id),
+                "Unknown",
+            )
             print(f"[Assigned voice: {voice_name}]")
 
         self.current_character = character
@@ -373,11 +392,15 @@ You ARE this character. Respond in first person."""
         assistant_message = response.choices[0].message.content
 
         self.conversation_history.append({"role": "user", "content": user_message})
-        self.conversation_history.append({"role": "assistant", "content": assistant_message})
+        self.conversation_history.append(
+            {"role": "assistant", "content": assistant_message}
+        )
 
         return assistant_message
 
-    def chat_with_voice(self, user_message: str, output_path: str = "output/response.mp3") -> tuple[str, str]:
+    def chat_with_voice(
+        self, user_message: str, output_path: str = "output/response.mp3"
+    ) -> tuple[str, str]:
         """Send a message and get both text and audio response."""
         text_response = self.chat(user_message)
 
@@ -391,7 +414,7 @@ You ARE this character. Respond in first person."""
         audio = self.elevenlabs.text_to_speech.convert(
             voice_id=self.current_character.voice_id,
             text=text_response,
-            model_id="eleven_multilingual_v2"
+            model_id="eleven_multilingual_v2",
         )
 
         with open(output_path, "wb") as f:
@@ -414,7 +437,7 @@ You ARE this character. Respond in first person."""
             voice_id=self.current_character.voice_id,
             text=text_response,
             model_id="eleven_turbo_v2_5",  # Faster model for streaming
-            output_format="pcm_24000"      # Raw PCM for real-time playback
+            output_format="pcm_24000",  # Raw PCM for real-time playback
         )
 
         return text_response, audio_stream
