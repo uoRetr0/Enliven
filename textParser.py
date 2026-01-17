@@ -23,6 +23,8 @@ Rules:
 - character = spoken dialogue
 - thoughts count as character dialogue when attributed (e.g., “thought he”, “thought the Wolf”)
 - for thoughts, set character_name to the thinker and keep the quoted thought as character text
+- remove non-story boilerplate (headers/footers, publisher lines like "Free eBooks at Planet eBook.com", copyright notices)
+- if boilerplate appears at the start or end, drop it entirely; do not emit segments for it
 - narrator -> character_name = null
 - character -> name if obvious else "Unknown"
 - keep quotation marks
@@ -163,9 +165,3 @@ def parse_text_to_file(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return output_path
-
-if __name__ == "__main__":
-    sample = '''
-    Once upon a time a Wolf was lapping at a spring on a hillside, when, looking up, what should he see but a Lamb just beginning to drink a little lower down. ‘There’s my supper,’ thought he, ‘if only I can find some excuse to seize it.’ Then he called out to the Lamb, ‘How dare you muddle the water from which I am drinking?’ ‘Nay, master, nay,’ said Lambikin; ‘if the water be muddy up there, I cannot be the cause of it, for it runs down from you to me.’ ‘Well, then,’ said the Wolf, ‘why did you call me bad names this time last year?’ ‘That cannot be,’ said the Lamb; ‘I am only six months old.’ ‘I don’t care,’ snarled the Wolf; ‘if it was not you it was your father;’ and with that he rushed upon the poor little Lamb and ate her all up. But before she died she gasped out.’Any excuse will serve a tyrant.’
-    '''
-    print(parse_text_to_file(sample))

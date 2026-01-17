@@ -1,5 +1,7 @@
+import json
 import os
 import re
+from pathlib import Path
 
 from dotenv import load_dotenv
 from elevenlabs import ElevenLabs
@@ -25,8 +27,21 @@ def _select_voice_id(key: str, voice_ids: list[str]) -> str:
     return voice_ids[score % len(voice_ids)]
 
 
+def _load_segments(segments: list[dict] | str | Path) -> list[dict]:
+    if isinstance(segments, (str, Path)):
+        json_path = Path(segments)
+        with json_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and "segments" in payload:
+            return payload["segments"]
+        if isinstance(payload, list):
+            return payload
+        raise ValueError("JSON must be a list of segments or an object with a 'segments' key.")
+    return segments
+
+
 def generate_audio_for_segments(
-    segments: list[dict],
+    segments: list[dict] | str | Path,
     output_dir: str = "output/segments",
     voice_map: dict | None = None,
     narrator_voice_id: str | None = None,
@@ -36,6 +51,7 @@ def generate_audio_for_segments(
     Generates audio files per segment and keeps voices consistent.
     Returns (outputs, voice_map, total_characters).
     """
+    segments = _load_segments(segments)
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     voice_ids = _voice_ids(elevenlabs)
 
@@ -93,7 +109,7 @@ def generate_audio_for_segments(
 
 
 def generate_audiobook(
-    segments: list[dict],
+    segments: list[dict] | str | Path,
     output_path: str = "output/audiobook.wav",
     voice_map: dict | None = None,
     narrator_voice_id: str | None = None,
@@ -104,6 +120,7 @@ def generate_audiobook(
     Generates a single WAV audiobook file from segments.
     Returns (output_path, voice_map, total_characters).
     """
+    segments = _load_segments(segments)
     elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
     voice_ids = _voice_ids(elevenlabs)
 
@@ -183,7 +200,7 @@ def generate_audiobook(
 
 
 def generate_audiobook_mp3(
-    segments: list[dict],
+    segments: list[dict] | str | Path,
     output_path: str = "output/audiobook.mp3",
     voice_map: dict | None = None,
     narrator_voice_id: str | None = None,
