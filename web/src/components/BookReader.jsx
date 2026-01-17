@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Upload, FileText, Loader2, Play, Pause, Volume2, RefreshCw } from 'lucide-react'
 import CharacterPill from './CharacterPill'
+import { getSessionId } from '../api/stubs'
 
 export default function BookReader({
   bookText,
@@ -128,7 +129,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
       const response = await fetch('http://localhost:8000/api/generate-audiobook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: bookText })
+        body: JSON.stringify({ text: bookText, session_id: getSessionId() })
       })
 
       if (!response.ok) {

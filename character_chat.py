@@ -30,6 +30,7 @@ class Character:
     description: str
     personality: str
     backstory: str
+    gender: str = "unknown"  # "male", "female", or "unknown"
     voice_id: str | None = None  # Auto-assigned if not provided
 
 
@@ -94,7 +95,7 @@ Analyze the dialogue for:
 - How their speech changes in different situations
 
 Return JSON only with string values (not nested objects):
-{{"description": "physical appearance and voice quality as a single string", "personality": "speaking style, mannerisms, speech patterns, emotional expression, and character traits as a single string", "backstory": "background, motivations, relationships, and character arc as a single string"}}"""
+{{"gender": "male or female (infer from name, context, pronouns)", "description": "physical appearance and voice quality as a single string", "personality": "speaking style, mannerisms, speech patterns, emotional expression, and character traits as a single string", "backstory": "background, motivations, relationships, and character arc as a single string"}}"""
 
     response = _extraction_client.chat.completions.create(
         model=_extraction_model,
@@ -186,7 +187,9 @@ def _normalize_character_names(
     """Merge character name variants (e.g., 'Harry' and 'Harry Potter')."""
     # Build list of all names
     names = list(character_dialogue.keys())
-    if len(names) <= 1:
+
+    # Skip LLM call for small character sets (pre-processing handles obvious cases)
+    if len(names) <= 5:
         return character_dialogue
 
     # Use LLM to identify which names refer to the same character
@@ -287,6 +290,7 @@ def extract_characters_from_text(text: str) -> list[Character]:
                     description=profile.get("description", f"A character named {name}"),
                     personality=profile.get("personality", "Speaks naturally"),
                     backstory=profile.get("backstory", "A character from the story"),
+                    gender=profile.get("gender", "unknown").lower(),
                 )
             )
 
@@ -369,10 +373,21 @@ class CharacterChat:
         """Use LLM to pick the best fitting voice for a character."""
         voices = self._get_available_voices()
 
+        # Use explicit gender from character profile
+        char_gender = character.gender.lower() if character.gender else "unknown"
+
+        # Filter voices by gender first for better matching
+        gender_matched = [
+            v for v in voices if v["gender"].lower() == char_gender
+        ] if char_gender in ["male", "female"] else voices
+
+        # Use gender-matched voices if available
+        available_voices = gender_matched if gender_matched else voices
+
         voices_desc = "\n".join(
             [
                 f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}"
-                for v in voices
+                for v in available_voices
             ]
         )
 
@@ -380,6 +395,7 @@ class CharacterChat:
 
 CHARACTER:
 Name: {character.name}
+Gender: {char_gender}
 Description: {character.description}
 Personality: {character.personality}
 
@@ -403,16 +419,9 @@ Return only the voice_id that best matches the character's gender, age, and pers
         # Validate voice_id exists
         valid_ids = [v["voice_id"] for v in voices]
         if voice_id not in valid_ids:
-            # Fallback to first voice matching gender
-            char_text = f"{character.description} {character.name}".lower()
-            is_female = any(
-                w in char_text for w in ["woman", "female", "girl", "she", "her"]
-            )
-            for v in voices:
-                if is_female and v["gender"] == "female":
-                    return v["voice_id"]
-                elif not is_female and v["gender"] == "male":
-                    return v["voice_id"]
+            # Fallback to first gender-matched voice
+            if gender_matched:
+                return gender_matched[0]["voice_id"]
             return voices[0]["voice_id"]
 
         return voice_id

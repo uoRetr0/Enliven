@@ -61,6 +61,14 @@ export async function sendMessage(characterId, message) {
 }
 
 /**
+ * Get current session ID
+ * @returns {string|null}
+ */
+export function getSessionId() {
+  return sessionId
+}
+
+/**
  * Get current session costs
  * @returns {Promise<{llm: number, tts: number, total: number}>}
  */

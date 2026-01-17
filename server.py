@@ -54,6 +54,7 @@ class CharacterResponse(BaseModel):
     description: str
     personality: str
     backstory: str
+    gender: str
 
 
 class ExtractResponse(BaseModel):
@@ -163,6 +164,7 @@ async def extract_characters(request: ExtractRequest):
                 description=char.description,
                 personality=char.personality,
                 backstory=char.backstory,
+                gender=char.gender,
             )
             for i, char in enumerate(characters)
         ]
@@ -289,21 +291,57 @@ def _pick_voice_for_character_llm(speaker: str, voices: list, characters: list[C
             break
 
     if not char_profile:
-        # No profile found, fall back to hash-based selection
+        # No profile found - infer gender from name and pick matching voice
+        speaker_lower = speaker.lower()
+
+        # Common female name patterns/endings
+        female_patterns = ["ella", "anna", "ina", "ette", "dame", "mrs", "miss", "lady",
+                          "della", "bella", "emma", "sophia", "maria", "julia", "sara"]
+        # Common male name patterns
+        male_patterns = ["jim", "john", "james", "tom", "bob", "bill", "mr", "sir", "lord",
+                        "jack", "mike", "david", "peter", "paul", "george", "henry"]
+
+        inferred_gender = "unknown"
+        if any(p in speaker_lower for p in female_patterns):
+            inferred_gender = "female"
+        elif any(p in speaker_lower for p in male_patterns):
+            inferred_gender = "male"
+
+        # Filter by inferred gender
+        if inferred_gender in ["male", "female"]:
+            gender_voices = [v for v in voices if (v.labels or {}).get("gender", "").lower() == inferred_gender]
+            if gender_voices:
+                score = sum(ord(ch) for ch in speaker_lower)
+                return gender_voices[score % len(gender_voices)].voice_id
+
+        # Final fallback: hash-based selection
         voice_ids = [v.voice_id for v in voices]
-        score = sum(ord(ch) for ch in speaker.lower())
+        score = sum(ord(ch) for ch in speaker_lower)
         return voice_ids[score % len(voice_ids)]
+
+    # Use explicit gender from character profile
+    char_gender = char_profile.gender.lower() if char_profile.gender else "unknown"
+
+    # Filter voices by gender first for better matching
+    gender_matched_voices = [
+        v for v in voices
+        if (v.labels or {}).get("gender", "").lower() == char_gender
+    ] if char_gender in ["male", "female"] else voices
+
+    # Use gender-matched voices if available, otherwise all voices
+    available_voices = gender_matched_voices if gender_matched_voices else voices
 
     # Build voice descriptions
     voices_desc = "\n".join([
         f"- {v.name} (id: {v.voice_id}): {(v.labels or {}).get('gender', 'unknown')} gender, {(v.labels or {}).get('age', 'unknown')} age, {(v.labels or {}).get('accent', 'unknown')} accent. {(v.labels or {}).get('description', '')}"
-        for v in voices
+        for v in available_voices
     ])
 
     prompt = f"""Pick the best voice for this character. Return ONLY the voice_id, nothing else.
 
 CHARACTER:
 Name: {char_profile.name}
+Gender: {char_gender}
 Description: {char_profile.description}
 Personality: {char_profile.personality}
 
@@ -329,17 +367,9 @@ Return only the voice_id that best matches the character's gender, age, and pers
     if voice_id in valid_ids:
         return voice_id
 
-    # Fallback: try to match gender from description
-    char_text = f"{char_profile.description} {char_profile.name}".lower()
-    is_female = any(w in char_text for w in ["woman", "female", "girl", "she", "her", "lady", "mrs", "miss"])
-
-    for v in voices:
-        labels = v.labels or {}
-        gender = labels.get("gender", "").lower()
-        if is_female and gender == "female":
-            return v.voice_id
-        elif not is_female and gender == "male":
-            return v.voice_id
+    # Fallback: use first gender-matched voice
+    if gender_matched_voices:
+        return gender_matched_voices[0].voice_id
 
     # Final fallback
     return voices[0].voice_id
@@ -350,6 +380,14 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     # Check session voice map cache
     if speaker in session.voice_map:
         return session.voice_map[speaker]
+
+    # Check if character already has a voice_id from chat
+    for char in session.characters:
+        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
+            if char.voice_id:
+                session.voice_map[speaker] = char.voice_id
+                return char.voice_id
+            break
 
     voices = _get_all_voices(session)
 
@@ -387,12 +425,19 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     voice_id = _pick_voice_for_character_llm(speaker, available_voices, session.characters)
     session.voice_map[speaker] = voice_id
 
+    # Also update character's voice_id for consistency with chat
+    for char in session.characters:
+        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
+            char.voice_id = voice_id
+            break
+
     return voice_id
 
 
 @app.post("/api/generate-audiobook", response_model=AudiobookResponse)
 async def generate_audiobook_endpoint(request: AudiobookRequest):
     """Generate audiobook with word-level timestamps for highlighting."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from textParser import parse_text
     from tts_generator import generate_segment_with_timestamps
 
@@ -408,23 +453,37 @@ async def generate_audiobook_endpoint(request: AudiobookRequest):
 
         segments = parse_text(request.text)
 
-        result_segments = []
+        # Pre-assign all voices first (sequential to avoid race conditions)
+        segment_voices = []
         for seg in segments:
             speaker = seg.get("character_name") or "narrator"
             voice_id = _get_voice_for_speaker(speaker, session)
+            segment_voices.append((seg, speaker, voice_id))
 
+        # Generate TTS in parallel
+        def generate_audio(args):
+            idx, seg, speaker, voice_id = args
             audio_data = generate_segment_with_timestamps(
                 text=seg["text"],
                 voice_id=voice_id
             )
+            return idx, speaker, audio_data
 
-            result_segments.append(SegmentAudio(
-                speaker=speaker,
-                audio_base64=audio_data["audio_base64"],
-                words=[WordTiming(**w) for w in audio_data["words"]]
-            ))
+        results = [None] * len(segment_voices)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(generate_audio, (i, seg, speaker, voice_id)): i
+                for i, (seg, speaker, voice_id) in enumerate(segment_voices)
+            }
+            for future in as_completed(futures):
+                idx, speaker, audio_data = future.result()
+                results[idx] = SegmentAudio(
+                    speaker=speaker,
+                    audio_base64=audio_data["audio_base64"],
+                    words=[WordTiming(**w) for w in audio_data["words"]]
+                )
 
-        return AudiobookResponse(segments=result_segments)
+        return AudiobookResponse(segments=results)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
