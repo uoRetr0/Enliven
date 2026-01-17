@@ -24,7 +24,10 @@ export async function extractCharacters(text) {
   const data = await response.json()
   sessionId = data.session_id
 
-  return data.characters
+  return {
+    characters: data.characters,
+    audiobook: data.audiobook,
+  }
 }
 
 /**

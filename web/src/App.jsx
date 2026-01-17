@@ -16,14 +16,16 @@ function App() {
   const [hasExtracted, setHasExtracted] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [lastMessageId, setLastMessageId] = useState(null) // Track the latest message that should auto-play
+  const [preloadedAudiobook, setPreloadedAudiobook] = useState(null)
 
   const handleExtract = async (text) => {
     setIsLoading(true)
     setBookText(text)
 
     try {
-      const chars = await extractCharacters(text)
-      setCharacters(chars)
+      const result = await extractCharacters(text)
+      setCharacters(result.characters)
+      setPreloadedAudiobook(result.audiobook)
       setHasExtracted(true)
     } catch (error) {
       console.error('Failed to extract characters:', error)
@@ -89,6 +91,7 @@ function App() {
     setMessagesByCharacter({})
     setIsChatOpen(false)
     setBookText('')
+    setPreloadedAudiobook(null)
   }
 
   return (
@@ -139,6 +142,7 @@ function App() {
               onSelectCharacter={handleSelectCharacter}
               isLoading={isLoading && !hasExtracted}
               hasExtracted={hasExtracted}
+              preloadedAudiobook={preloadedAudiobook}
             />
           </div>
         </div>

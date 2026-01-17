@@ -20,8 +20,7 @@ class SessionData:
     """Session-scoped storage for character chat and audiobook state."""
     chat: CharacterChat
     characters: list[Character] = field(default_factory=list)
-    voice_map: dict[str, str] = field(default_factory=dict)
-    narrator_voice_id: str | None = None
+    voice_map: dict[str, str] = field(default_factory=dict)  # Single source of truth for all voices
     voices_cache: list | None = None
 
 app = FastAPI(title="Enliven API")
@@ -60,6 +59,7 @@ class CharacterResponse(BaseModel):
 class ExtractResponse(BaseModel):
     session_id: str
     characters: list[CharacterResponse]
+    audiobook: "AudiobookResponse | None" = None
 
 
 class ChatResponse(BaseModel):
@@ -140,7 +140,11 @@ async def extract_pdf(file: UploadFile = File(...)):
 
 @app.post("/api/extract-characters", response_model=ExtractResponse)
 async def extract_characters(request: ExtractRequest):
-    """Extract characters from book text."""
+    """Extract characters from book text and pre-generate audiobook."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from textParser import parse_text
+    from tts_generator import generate_segment_with_timestamps
+
     # Extract real characters from text
     characters = extract_characters_from_text(request.text)
 
@@ -150,10 +154,51 @@ async def extract_characters(request: ExtractRequest):
 
     # Create new session with session-scoped data
     session_id = str(uuid.uuid4())
-    sessions[session_id] = SessionData(
+    session = SessionData(
         chat=CharacterChat(),
         characters=characters,
     )
+    sessions[session_id] = session
+
+    # Pre-generate audiobook so it's ready for instant playback
+    audiobook_response = None
+    try:
+        segments = parse_text(request.text)
+
+        # Pre-assign voices using chat's picker (better quality)
+        segment_voices = []
+        for seg in segments:
+            speaker = seg.get("character_name") or "narrator"
+            voice_id = _get_voice_for_speaker(speaker, session)
+            segment_voices.append((seg, speaker, voice_id))
+
+        # Generate TTS in parallel
+        def generate_audio(args):
+            idx, seg, speaker, voice_id = args
+            audio_data = generate_segment_with_timestamps(
+                text=seg["text"],
+                voice_id=voice_id
+            )
+            return idx, speaker, audio_data
+
+        results = [None] * len(segment_voices)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(generate_audio, (i, seg, speaker, voice_id)): i
+                for i, (seg, speaker, voice_id) in enumerate(segment_voices)
+            }
+            for future in as_completed(futures):
+                idx, speaker, audio_data = future.result()
+                results[idx] = SegmentAudio(
+                    speaker=speaker,
+                    audio_base64=audio_data["audio_base64"],
+                    words=[WordTiming(**w) for w in audio_data["words"]]
+                )
+
+        audiobook_response = AudiobookResponse(segments=results)
+    except Exception as e:
+        print(f"Audiobook pre-generation failed: {e}")
+        # Continue without audiobook - user can generate later
 
     return ExtractResponse(
         session_id=session_id,
@@ -167,7 +212,8 @@ async def extract_characters(request: ExtractRequest):
                 gender=char.gender,
             )
             for i, char in enumerate(characters)
-        ]
+        ],
+        audiobook=audiobook_response,
     )
 
 
@@ -190,9 +236,10 @@ async def chat(request: ChatRequest):
     except (ValueError, IndexError):
         raise HTTPException(status_code=404, detail="Character not found")
 
-    # Set character if changed
-    if chat_instance.current_character is None or chat_instance.current_character.name != character.name:
-        chat_instance.set_character(character)
+    # Always sync voice to session (use lowercase key for consistency)
+    chat_instance.set_character(character)
+    if character.voice_id:
+        session.voice_map[character.name.lower()] = character.voice_id
 
     # Get response with voice
     try:
@@ -279,158 +326,46 @@ def _get_all_voices(session: SessionData | None = None) -> list:
     return voices
 
 
-def _pick_voice_for_character_llm(speaker: str, voices: list, characters: list[Character]) -> str:
-    """Use LLM to pick the best voice for a character based on their profile."""
-    from openai import OpenAI
-
-    # Find character profile from session characters
-    char_profile = None
-    for char in characters:
-        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
-            char_profile = char
-            break
-
-    if not char_profile:
-        # No profile found - infer gender from name and pick matching voice
-        speaker_lower = speaker.lower()
-
-        # Common female name patterns/endings
-        female_patterns = ["ella", "anna", "ina", "ette", "dame", "mrs", "miss", "lady",
-                          "della", "bella", "emma", "sophia", "maria", "julia", "sara"]
-        # Common male name patterns
-        male_patterns = ["jim", "john", "james", "tom", "bob", "bill", "mr", "sir", "lord",
-                        "jack", "mike", "david", "peter", "paul", "george", "henry"]
-
-        inferred_gender = "unknown"
-        if any(p in speaker_lower for p in female_patterns):
-            inferred_gender = "female"
-        elif any(p in speaker_lower for p in male_patterns):
-            inferred_gender = "male"
-
-        # Filter by inferred gender
-        if inferred_gender in ["male", "female"]:
-            gender_voices = [v for v in voices if (v.labels or {}).get("gender", "").lower() == inferred_gender]
-            if gender_voices:
-                score = sum(ord(ch) for ch in speaker_lower)
-                return gender_voices[score % len(gender_voices)].voice_id
-
-        # Final fallback: hash-based selection
-        voice_ids = [v.voice_id for v in voices]
-        score = sum(ord(ch) for ch in speaker_lower)
-        return voice_ids[score % len(voice_ids)]
-
-    # Use explicit gender from character profile
-    char_gender = char_profile.gender.lower() if char_profile.gender else "unknown"
-
-    # Filter voices by gender first for better matching
-    gender_matched_voices = [
-        v for v in voices
-        if (v.labels or {}).get("gender", "").lower() == char_gender
-    ] if char_gender in ["male", "female"] else voices
-
-    # Use gender-matched voices if available, otherwise all voices
-    available_voices = gender_matched_voices if gender_matched_voices else voices
-
-    # Build voice descriptions
-    voices_desc = "\n".join([
-        f"- {v.name} (id: {v.voice_id}): {(v.labels or {}).get('gender', 'unknown')} gender, {(v.labels or {}).get('age', 'unknown')} age, {(v.labels or {}).get('accent', 'unknown')} accent. {(v.labels or {}).get('description', '')}"
-        for v in available_voices
-    ])
-
-    prompt = f"""Pick the best voice for this character. Return ONLY the voice_id, nothing else.
-
-CHARACTER:
-Name: {char_profile.name}
-Gender: {char_gender}
-Description: {char_profile.description}
-Personality: {char_profile.personality}
-
-AVAILABLE VOICES:
-{voices_desc}
-
-Return only the voice_id that best matches the character's gender, age, and personality."""
-
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
-
-    response = client.chat.completions.create(
-        model="google/gemini-3-flash-preview",
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    voice_id = response.choices[0].message.content.strip()
-
-    # Validate voice_id exists
-    valid_ids = [v.voice_id for v in voices]
-    if voice_id in valid_ids:
-        return voice_id
-
-    # Fallback: use first gender-matched voice
-    if gender_matched_voices:
-        return gender_matched_voices[0].voice_id
-
-    # Final fallback
-    return voices[0].voice_id
-
-
 def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
-    """Get or assign a voice for a speaker (session-scoped)."""
-    # Check session voice map cache
-    if speaker in session.voice_map:
-        return session.voice_map[speaker]
+    """Get or assign a voice for a speaker (session-scoped).
 
-    # Check if character already has a voice_id from chat
+    Uses chat's voice picker as single source of truth for character voices.
+    All voice_map keys are normalized to lowercase for consistency.
+    """
+    speaker_key = speaker.lower()
+
+    # Check cache first (case-insensitive)
+    if speaker_key in session.voice_map:
+        return session.voice_map[speaker_key]
+
+    # For narrator, find a good narrator voice
+    if speaker_key == "narrator":
+        voices = _get_all_voices(session)
+        for v in voices:
+            labels = v.labels or {}
+            if "narrator" in labels.get("use_case", "").lower():
+                session.voice_map["narrator"] = v.voice_id
+                return v.voice_id
+        # Fallback to first voice
+        session.voice_map["narrator"] = voices[0].voice_id
+        return voices[0].voice_id
+
+    # For characters, use chat's picker (single source of truth)
     for char in session.characters:
-        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
-            if char.voice_id:
-                session.voice_map[speaker] = char.voice_id
-                return char.voice_id
-            break
+        char_key = char.name.lower()
+        # Match exact or substring (e.g., "Wolf" matches "The Wolf")
+        if char_key == speaker_key or speaker_key in char_key:
+            if not char.voice_id:
+                session.chat.set_character(char)
+            # Store with both keys for consistency
+            session.voice_map[speaker_key] = char.voice_id
+            session.voice_map[char_key] = char.voice_id
+            return char.voice_id
 
+    # Unknown speaker fallback
     voices = _get_all_voices(session)
-
-    if not voices:
-        raise ValueError("No ElevenLabs voices available.")
-
-    # Find a good narrator voice (prefer one labeled for narration/audiobooks)
-    if speaker == "narrator":
-        if session.narrator_voice_id is None:
-            # Look for a voice suitable for narration
-            narrator_keywords = ["narrator", "audiobook", "story", "neutral"]
-            for voice in voices:
-                labels = voice.labels or {}
-                use_case = labels.get("use_case", "").lower()
-                description = labels.get("description", "").lower()
-                name_lower = voice.name.lower()
-
-                if any(kw in use_case or kw in description or kw in name_lower for kw in narrator_keywords):
-                    session.narrator_voice_id = voice.voice_id
-                    break
-
-            # Fallback to first voice if no narrator-specific voice found
-            if session.narrator_voice_id is None:
-                session.narrator_voice_id = voices[0].voice_id
-
-        session.voice_map["narrator"] = session.narrator_voice_id
-        return session.narrator_voice_id
-
-    # For characters, exclude the narrator voice and use LLM to pick best match
-    available_voices = [v for v in voices if v.voice_id != session.narrator_voice_id]
-
-    if not available_voices:
-        available_voices = voices
-
-    voice_id = _pick_voice_for_character_llm(speaker, available_voices, session.characters)
-    session.voice_map[speaker] = voice_id
-
-    # Also update character's voice_id for consistency with chat
-    for char in session.characters:
-        if char.name.lower() == speaker.lower() or speaker.lower() in char.name.lower():
-            char.voice_id = voice_id
-            break
-
+    voice_id = voices[0].voice_id
+    session.voice_map[speaker_key] = voice_id
     return voice_id
 
 

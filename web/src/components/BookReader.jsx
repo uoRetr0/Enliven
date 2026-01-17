@@ -12,6 +12,7 @@ export default function BookReader({
   onSelectCharacter,
   isLoading,
   hasExtracted,
+  preloadedAudiobook,
 }) {
   const [text, setText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -25,6 +26,13 @@ export default function BookReader({
   const [currentWordIndex, setCurrentWordIndex] = useState(-1)
   const [isGeneratingAudiobook, setIsGeneratingAudiobook] = useState(false)
   const audioRef = useRef(null)
+
+  // Load preloaded audiobook when available
+  useEffect(() => {
+    if (preloadedAudiobook && !audiobookData) {
+      setAudiobookData(preloadedAudiobook)
+    }
+  }, [preloadedAudiobook])
 
   const handleDragOver = (e) => {
     e.preventDefault()

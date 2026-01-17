@@ -456,7 +456,7 @@ CHARACTER:
 RULES:
 1. Respond as {char.name} would - use their speech patterns and mannerisms
 2. Draw from your backstory when answering
-3. Keep responses conversational (2-4 sentences)
+3. Keep responses very brief (1-2 sentences max). Be concise.
 4. Show appropriate emotion about your actions in the story
 
 You ARE this character. Respond in first person."""
@@ -475,6 +475,7 @@ You ARE this character. Respond in first person."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
+            max_tokens=100,  # Force shorter responses for faster TTS
         )
 
         # Track costs
