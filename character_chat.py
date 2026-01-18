@@ -352,6 +352,7 @@ class CharacterChat:
         self.current_character: Character | None = None
         self.conversation_history: list[dict] = []
         self._voices_cache: list[dict] | None = None
+        self._used_voice_ids: set[str] = set()  # Track used voices to avoid duplicates
         self.costs = CostTracker()
 
     def _get_available_voices(self) -> list[dict]:
@@ -440,7 +441,7 @@ class CharacterChat:
         return score
 
     def _pick_voice_for_character(self, character: Character) -> str:
-        """Pick the best available voice for a character."""
+        """Pick the best available voice for a character, avoiding duplicates."""
         voices = self._get_available_voices()
         char_gender = character.gender.lower() if character.gender else "unknown"
         char_desc = f"{character.description} {character.personality}".lower()
@@ -457,6 +458,12 @@ class CharacterChat:
         gender_voices = [v for v in voices if v["gender"].lower() == char_gender]
         if not gender_voices:
             gender_voices = voices
+
+        # Exclude already used voices to prevent duplicates
+        available_voices = [v for v in gender_voices if v["voice_id"] not in self._used_voice_ids]
+        if not available_voices:
+            # If all voices used, reset and allow reuse
+            available_voices = gender_voices
 
         def score_voice(v):
             score = 0
@@ -500,11 +507,12 @@ class CharacterChat:
             return score
 
         # Score and sort
-        scored = [(v, score_voice(v)) for v in gender_voices]
+        scored = [(v, score_voice(v)) for v in available_voices]
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # Return best match
+        # Return best match and mark as used
         best = scored[0][0]
+        self._used_voice_ids.add(best["voice_id"])
         print(f"[Voice] {character.name} ({char_gender}) → {best['name']} (score: {scored[0][1]})")
         return best["voice_id"]
 

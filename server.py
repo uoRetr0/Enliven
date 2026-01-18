@@ -22,6 +22,7 @@ class SessionData:
     characters: list[Character] = field(default_factory=list)
     voice_map: dict[str, str] = field(default_factory=dict)  # Single source of truth for all voices
     voices_cache: list | None = None
+    agent_cache: dict[str, str] = field(default_factory=dict)  # character_id -> agent_id cache
 
 app = FastAPI(title="Enliven API")
 
@@ -86,6 +87,16 @@ class TranscribeResponse(BaseModel):
 class AudiobookRequest(BaseModel):
     text: str
     session_id: str | None = None  # Optional: use session for voice mapping
+
+
+class CreateAgentRequest(BaseModel):
+    session_id: str
+    character_id: str
+
+
+class CreateAgentResponse(BaseModel):
+    agent_id: str
+    signed_url: str
 
 
 class WordTiming(BaseModel):
@@ -267,6 +278,104 @@ async def chat(request: ChatRequest):
         return ChatResponse(text=text_response, audio_url=audio_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/create-agent", response_model=CreateAgentResponse)
+async def create_agent(request: CreateAgentRequest):
+    """Get a signed URL for ElevenLabs conversational AI - blazingly fast with caching."""
+    import httpx
+
+    # Get session or return error
+    if request.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found. Please extract characters first.")
+
+    session = sessions[request.session_id]
+
+    # Find character in session-scoped list
+    try:
+        char_idx = int(request.character_id)
+        if char_idx < 0 or char_idx >= len(session.characters):
+            raise ValueError()
+        character = session.characters[char_idx]
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    # Ensure character has a voice assigned
+    char_key = character.name.lower()
+    if not character.voice_id:
+        if char_key in session.voice_map:
+            character.voice_id = session.voice_map[char_key]
+        else:
+            session.chat.set_character(character)
+            if character.voice_id:
+                session.voice_map[char_key] = character.voice_id
+
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    cache_key = f"{request.session_id}:{request.character_id}"
+
+    # Check cache for existing agent
+    agent_id = session.agent_cache.get(cache_key)
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Create agent if not cached
+        if not agent_id:
+            system_prompt = f"""You are {character.name} from a story. Stay completely in character.
+
+CHARACTER: {character.name}
+Description: {character.description}
+Personality: {character.personality}
+Backstory: {character.backstory}
+
+RULES:
+1. Respond as {character.name} would - use their speech patterns
+2. Keep responses brief and conversational (1-2 sentences)
+3. You ARE this character. Respond in first person."""
+
+            create_response = await client.post(
+                "https://api.elevenlabs.io/v1/convai/agents/create",
+                headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+                json={
+                    "name": f"enliven-{char_key[:20]}-{request.session_id[:6]}",
+                    "conversation_config": {
+                        "agent": {
+                            "prompt": {"prompt": system_prompt},
+                            "first_message": f"Hello! I'm {character.name}. What would you like to talk about?",
+                            "language": "en"
+                        },
+                        "tts": {"voice_id": character.voice_id}
+                    }
+                }
+            )
+
+            if create_response.status_code not in [200, 201]:
+                raise HTTPException(status_code=500, detail=f"Agent creation failed: {create_response.text}")
+
+            response_data = create_response.json()
+            print(f"[Agent Created] Response: {response_data}")
+            agent_id = response_data.get("agent_id")
+
+            if not agent_id:
+                raise HTTPException(status_code=500, detail=f"No agent_id in response: {response_data}")
+
+            session.agent_cache[cache_key] = agent_id
+            print(f"[Agent Cached] {cache_key} -> {agent_id}")
+
+        # Get signed URL for instant connection
+        print(f"[Getting Signed URL] agent_id={agent_id}")
+        signed_response = await client.get(
+            f"https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id={agent_id}",
+            headers={"xi-api-key": api_key}
+        )
+
+        if signed_response.status_code != 200:
+            # Agent might be invalid, clear cache and retry
+            print(f"[Signed URL Failed] Status: {signed_response.status_code}, Response: {signed_response.text}")
+            session.agent_cache.pop(cache_key, None)
+            raise HTTPException(status_code=500, detail=f"Failed to get signed URL: {signed_response.text}")
+
+        signed_url = signed_response.json().get("signed_url")
+        print(f"[Signed URL Success] {signed_url}")
+        return CreateAgentResponse(agent_id=agent_id, signed_url=signed_url)
 
 
 @app.get("/api/costs", response_model=CostResponse)
