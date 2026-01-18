@@ -607,16 +607,23 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
         use_case = labels.get("use_case", "").lower()
         desc = labels.get("description", "").lower()
         age = labels.get("age", "").lower()
+        gender = labels.get("gender", "").lower()
 
         # Prefer character/conversational voices
         if "characters" in use_case or "conversational" in use_case:
             score += 30
-        # For lamb/sheep/innocent characters, prefer young/soft voices
-        if any(word in speaker_key for word in ["lamb", "sheep", "kid", "child", "little"]):
+        # For lamb/sheep/innocent characters, prefer young/soft FEMALE voices
+        if any(word in speaker_key for word in ["lamb", "sheep", "lambikin"]):
+            if gender == "female":
+                score += 100  # Strong preference for female voice
             if age == "young":
                 score += 50
-            if "soft" in desc or "gentle" in desc or "sweet" in desc:
+            if "soft" in desc or "gentle" in desc or "sweet" in desc or "innocent" in desc:
                 score += 30
+        # For kid/child characters
+        if any(word in speaker_key for word in ["kid", "child", "little", "boy", "girl"]):
+            if age == "young":
+                score += 50
         return score
 
     scored = [(v, score_unknown(v)) for v in available]

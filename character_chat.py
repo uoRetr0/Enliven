@@ -445,6 +445,12 @@ class CharacterChat:
         voices = self._get_available_voices()
         char_gender = character.gender.lower() if character.gender else "unknown"
         char_desc = f"{character.description} {character.personality}".lower()
+        char_name = character.name.lower()
+
+        # Override gender for specific character types
+        # Lambs/sheep are typically portrayed with innocent female voices
+        if any(word in char_name for word in ["lamb", "sheep", "lambikin"]):
+            char_gender = "female"
 
         # Get preferred voice names for this gender
         if char_gender == "female":
