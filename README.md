@@ -1,15 +1,15 @@
 # Enliven
 
-Talk to book characters with AI-powered voice conversations. Features a React web UI with voice input/output and a CLI for voice-first interactions.
+Talk to book characters with AI-powered voice conversations. Upload any text, extract characters, and have real-time voice conversations with them.
 
 ## Features
 
-- Chat with AI-powered book characters
-- Text-to-speech responses via ElevenLabs
-- Voice input with auto-stop silence detection
-- **Audiobook generation** with word-by-word highlighting
-- Web UI with real-time chat sidebar
-- CLI with interrupt support
+- **Real-time voice conversations** with ElevenLabs Conversational AI - talk naturally, interrupt anytime
+- **Audiobook generation** with word-by-word highlighting and smooth progress tracking
+- **Smart character extraction** from any text with auto-generated personalities
+- **Intelligent voice assignment** - unique voices per character, gender-aware selection
+- **Text formatting** - auto-detects titles, formats dialogue for readability
+- Text chat with AI-powered responses
 - Cost tracking for API usage
 
 ## Setup

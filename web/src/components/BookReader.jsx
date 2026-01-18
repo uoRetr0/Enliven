@@ -25,6 +25,9 @@ export default function BookReader({
   const [currentSegment, setCurrentSegment] = useState(0)
   const [currentWordIndex, setCurrentWordIndex] = useState(-1)
   const [isGeneratingAudiobook, setIsGeneratingAudiobook] = useState(false)
+  const [segmentDurations, setSegmentDurations] = useState([]) // Track actual durations
+  const [totalDuration, setTotalDuration] = useState(0)
+  const [elapsedBefore, setElapsedBefore] = useState(0) // Time elapsed before current segment
   const audioRef = useRef(null)
 
   // Load preloaded audiobook when available
@@ -130,6 +133,9 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
     setCurrentSegment(0)
     setCurrentWordIndex(-1)
     setIsPlaying(false)
+    setSegmentDurations([])
+    setTotalDuration(0)
+    setElapsedBefore(0)
 
     setIsGeneratingAudiobook(true)
 
@@ -174,13 +180,36 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
   const handleSegmentEnd = () => {
     if (!audiobookData) return
     if (currentSegment < audiobookData.segments.length - 1) {
+      // Update elapsed time before moving to next segment
+      const currentDuration = audioRef.current?.duration || 0
+      setElapsedBefore(prev => prev + currentDuration)
       setCurrentSegment(prev => prev + 1)
       setCurrentWordIndex(-1)
     } else {
       setIsPlaying(false)
       setCurrentSegment(0)
       setCurrentWordIndex(-1)
+      setElapsedBefore(0)
     }
+  }
+
+  // Track segment duration when audio loads
+  const handleLoadedMetadata = () => {
+    if (!audioRef.current || !audiobookData) return
+    const duration = audioRef.current.duration
+
+    setSegmentDurations(prev => {
+      const updated = [...prev]
+      updated[currentSegment] = duration
+      // Recalculate total duration
+      const total = updated.reduce((sum, d) => sum + (d || 0), 0)
+      // Estimate remaining segments based on average
+      const knownCount = updated.filter(d => d > 0).length
+      const avgDuration = knownCount > 0 ? total / knownCount : 3
+      const estimatedTotal = total + (audiobookData.segments.length - knownCount) * avgDuration
+      setTotalDuration(estimatedTotal)
+      return updated
+    })
   }
 
   // When audio is ready and we're supposed to be playing, start playback
@@ -239,6 +268,82 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
       globalIndex += audiobookData.segments[i].words?.length || 0
     }
     return globalIndex + currentWordIndex
+  }
+
+  // Format text for better readability
+  const formatBookText = (text) => {
+    if (!text) return ''
+
+    let formatted = text.trim()
+
+    // Detect title: find where weird capitalization ends
+    // Title has: ALL CAPS words (THE, LAMB), MiXeD caps (WoLf, tHE)
+    // Prose starts: when we stop seeing weird caps
+    const words = formatted.split(/\s+/)
+    let lastWeirdCapsIndex = -1
+    let charCount = 0
+
+    const isWeirdCaps = (w) => {
+      // ALL CAPS (2+ consecutive uppercase)
+      if (/[A-Z]{2,}/.test(w)) return true
+      // MiXeD caps (lowercase followed by uppercase)
+      if (/[a-z][A-Z]/.test(w)) return true
+      // Starts with lowercase but has uppercase later (tHE)
+      if (/^[a-z].*[A-Z]/.test(w)) return true
+      return false
+    }
+
+    for (let i = 0; i < Math.min(words.length, 20); i++) {
+      const word = words[i]
+      if (isWeirdCaps(word)) {
+        lastWeirdCapsIndex = i
+      }
+      charCount += word.length + 1
+
+      // Stop searching after we've gone 5 words past last weird caps
+      if (i > lastWeirdCapsIndex + 5 && lastWeirdCapsIndex >= 0) {
+        break
+      }
+    }
+
+    // Title ends after the last weird caps word
+    if (lastWeirdCapsIndex >= 0) {
+      let titleEndPos = 0
+      for (let i = 0; i <= lastWeirdCapsIndex; i++) {
+        titleEndPos += words[i].length + 1
+      }
+
+      if (titleEndPos > 3 && titleEndPos < 150) {
+        const rawTitle = formatted.slice(0, titleEndPos).trim()
+        const restOfText = formatted.slice(titleEndPos).trim()
+
+        // Convert title to Title Case
+        const titleCase = rawTitle
+          .toLowerCase()
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+
+        formatted = titleCase + '\n\n' + restOfText
+      }
+    }
+
+    // Add line breaks between speakers
+    // Pattern: punctuation + closing quote + space + opening quote (new speaker)
+    // e.g., ?' ' or .' ' or ,' '
+    formatted = formatted.replace(/([.!?][\u0027\u0022\u2018\u2019\u201C\u201D])\s+([\u0027\u0022\u2018\u2019\u201C\u201D])/g, '$1\n\n$2')
+
+    // Break after dialogue attribution ends and new dialogue starts
+    // e.g., said Lambikin; 'text  or  said the Wolf, 'text
+    formatted = formatted.replace(/((?:said|replied|asked|cried|called|shouted|whispered|answered|exclaimed|snarled|gasped|thought)\s+[\w\s]+[;,])\s*([\u0027\u0022\u2018\u2019\u201C\u201D])/gi, '$1\n\n$2')
+
+    // Clean up multiple newlines
+    formatted = formatted.replace(/\n{3,}/g, '\n\n')
+
+    // Don't start with newline
+    formatted = formatted.replace(/^\n+/, '')
+
+    return formatted
   }
 
   // Upload state
@@ -395,52 +500,67 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
 
   // Render text with word highlighting when audiobook is active
   const renderTextWithHighlighting = () => {
+    const formattedText = formatBookText(bookText)
+
     if (!audiobookData) {
       // No audiobook - render plain paragraphs
-      return bookText.split('\n\n').map((paragraph, index) => (
-        <p
-          key={index}
-          className="text-text-primary/90 leading-[1.8] mb-6 last:mb-0 indent-0 first:indent-0"
-        >
-          {paragraph}
-        </p>
-      ))
+      return formattedText.split('\n\n').map((paragraph, index) => {
+        // Check if this is a title (first paragraph, short, title-case)
+        const isTitle = index === 0 && paragraph.length < 100 && !paragraph.includes('.')
+        return (
+          <p
+            key={index}
+            className={`leading-[1.8] mb-6 last:mb-0 ${
+              isTitle
+                ? 'text-xl font-bold text-text-primary text-center mb-8'
+                : 'text-text-primary/90'
+            }`}
+          >
+            {paragraph}
+          </p>
+        )
+      })
     }
 
     // Audiobook active - render with word highlighting
     let wordCounter = 0
-    return bookText.split('\n\n').map((paragraph, pIndex) => (
-      <p
-        key={pIndex}
-        className="text-text-primary/90 leading-[1.8] mb-6 last:mb-0"
-      >
-        {paragraph.split(/\s+/).map((word, wIndex) => {
-          const currentWordCounter = wordCounter
-          wordCounter++
-          const isNext = currentWordCounter === globalWordIndex + 1 && globalWordIndex >= 0
-          return (
-            <span
-              key={wIndex}
-              className={`transition-all duration-200 ${
-                isNext
-                  ? 'text-purple-300'
-                  : 'text-text-primary/70'
-              }`}
-            >
-              {word}{' '}
-            </span>
-          )
-        })}
-      </p>
-    ))
+    return formattedText.split('\n\n').map((paragraph, pIndex) => {
+      const isTitle = pIndex === 0 && paragraph.length < 100 && !paragraph.includes('.')
+      return (
+        <p
+          key={pIndex}
+          className={`leading-[1.8] mb-6 last:mb-0 ${
+            isTitle ? 'text-xl font-bold text-center mb-8' : ''
+          }`}
+        >
+          {paragraph.split(/\s+/).map((word, wIndex) => {
+            const currentWordCounter = wordCounter
+            wordCounter++
+            const isNext = currentWordCounter === globalWordIndex + 1 && globalWordIndex >= 0
+            return (
+              <span
+                key={wIndex}
+                className={`transition-all duration-200 ${
+                  isTitle
+                    ? isNext ? 'text-purple-400 font-medium' : 'text-text-primary'
+                    : isNext ? 'text-purple-400 font-medium' : 'text-text-primary/70'
+                }`}
+              >
+                {word}{' '}
+              </span>
+            )
+          })}
+        </p>
+      )
+    })
   }
 
-  // Calculate progress within current segment
-  const getSegmentProgress = () => {
-    if (!audiobookData || !audioRef.current) return 0
-    const duration = audioRef.current.duration || 1
+  // Calculate total progress based on actual time
+  const getTotalProgress = () => {
+    if (!audiobookData || !audioRef.current || totalDuration === 0) return 0
     const currentTime = audioRef.current.currentTime || 0
-    return (currentTime / duration) * 100
+    const elapsed = elapsedBefore + currentTime
+    return Math.min((elapsed / totalDuration) * 100, 100)
   }
 
   return (
@@ -491,16 +611,11 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
                 <motion.div
                   className="h-full bg-accent"
                   initial={false}
-                  animate={{ width: `${getSegmentProgress()}%` }}
+                  animate={{ width: `${getTotalProgress()}%` }}
                   transition={{ duration: 0.1 }}
                 />
               </div>
             </div>
-
-            {/* Segment indicator */}
-            <span className="text-xs text-text-muted whitespace-nowrap">
-              {currentSegment + 1}/{audiobookData.segments.length}
-            </span>
 
             {/* Regenerate button */}
             <button
@@ -524,6 +639,7 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
               ? `data:audio/mpeg;base64,${audiobookData.segments[currentSegment].audio_base64}`
               : undefined
           }
+          onLoadedMetadata={handleLoadedMetadata}
           onCanPlay={handleCanPlay}
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleSegmentEnd}
