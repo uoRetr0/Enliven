@@ -334,14 +334,24 @@ def _get_all_voices(session: SessionData | None = None) -> list:
     return voices
 
 
+# Preferred narrator voice names (in order of preference)
+PREFERRED_NARRATOR_NAMES = ["Adam", "Rachel", "Daniel", "Charlotte", "Brian", "Sarah"]
+
+
 def _score_narrator_voice(voice) -> int:
     """Score how well a voice suits narration (higher = better)."""
     score = 0
     labels = voice.labels or {}
+    name = voice.name
     use_case = labels.get("use_case", "").lower()
     description = labels.get("description", "").lower()
     accent = labels.get("accent", "").lower()
     age = labels.get("age", "").lower()
+
+    # Big bonus for preferred premium voices
+    if name in PREFERRED_NARRATOR_NAMES:
+        position = PREFERRED_NARRATOR_NAMES.index(name)
+        score += 200 - (position * 15)
 
     # Strong preference for narration-focused voices
     if "narration" in use_case or "audiobook" in use_case:
@@ -423,15 +433,15 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
     if speaker_key in session.voice_map:
         return session.voice_map[speaker_key]
 
-    # For narrator, find the best narrator voice using scoring
+    # For narrator, find the best available narrator voice
     if speaker_key == "narrator":
         voices = _get_all_voices(session)
-        # Score all voices for narration suitability
         scored = [(v, _score_narrator_voice(v)) for v in voices]
         scored.sort(key=lambda x: x[1], reverse=True)
-        best_voice = scored[0][0] if scored else voices[0]
-        session.voice_map["narrator"] = best_voice.voice_id
-        return best_voice.voice_id
+        best = scored[0][0] if scored else voices[0]
+        session.voice_map["narrator"] = best.voice_id
+        print(f"[Voice] Narrator → {best.name} (score: {scored[0][1]})")
+        return best.voice_id
 
     # For characters, find best match and use chat's picker
     matched_char = _match_speaker_to_character(speaker_key, session.characters)
@@ -449,14 +459,14 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
         session.voice_map[char_key] = voice_id
         return voice_id
 
-    # Unknown speaker fallback - use a neutral voice
+    # Unknown speaker fallback - use best available narrator voice
     voices = _get_all_voices(session)
-    # Score for neutral/general use
     scored = [(v, _score_narrator_voice(v)) for v in voices]
     scored.sort(key=lambda x: x[1], reverse=True)
-    voice_id = scored[0][0].voice_id if scored else voices[0].voice_id
-    session.voice_map[speaker_key] = voice_id
-    return voice_id
+    best = scored[0][0] if scored else voices[0]
+    print(f"[Voice] Unknown speaker '{speaker}' → {best.name} (fallback)")
+    session.voice_map[speaker_key] = best.voice_id
+    return best.voice_id
 
 
 @app.post("/api/generate-audiobook", response_model=AudiobookResponse)

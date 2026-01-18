@@ -336,6 +336,11 @@ class CostTracker:
 class CharacterChat:
     """Handles conversations with book characters."""
 
+    # Preferred premium voice names (in order of preference)
+    PREFERRED_MALE_VOICES = ["Adam", "Antoni", "Josh", "Arnold", "Sam", "Daniel", "Marcus", "Brian"]
+    PREFERRED_FEMALE_VOICES = ["Rachel", "Bella", "Elli", "Freya", "Grace", "Charlotte", "Sarah", "Emily"]
+    PREFERRED_NARRATOR_VOICES = ["Adam", "Rachel", "Daniel", "Charlotte"]
+
     def __init__(self):
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -435,76 +440,73 @@ class CharacterChat:
         return score
 
     def _pick_voice_for_character(self, character: Character) -> str:
-        """Use scoring + LLM to pick the best fitting voice for a character."""
+        """Pick the best available voice for a character."""
         voices = self._get_available_voices()
-
-        # Use explicit gender from character profile
         char_gender = character.gender.lower() if character.gender else "unknown"
+        char_desc = f"{character.description} {character.personality}".lower()
 
-        # Filter voices by gender first
-        gender_matched = [
-            v for v in voices if v["gender"].lower() == char_gender
-        ] if char_gender in ["male", "female"] else voices
+        # Get preferred voice names for this gender
+        if char_gender == "female":
+            preferred_names = self.PREFERRED_FEMALE_VOICES
+        elif char_gender == "male":
+            preferred_names = self.PREFERRED_MALE_VOICES
+        else:
+            preferred_names = self.PREFERRED_MALE_VOICES + self.PREFERRED_FEMALE_VOICES
 
-        # Use gender-matched voices if available
-        candidates = gender_matched if gender_matched else voices
+        # Filter by gender first
+        gender_voices = [v for v in voices if v["gender"].lower() == char_gender]
+        if not gender_voices:
+            gender_voices = voices
 
-        # Score and sort candidates
-        scored = [(v, self._score_voice_for_character(v, character)) for v in candidates]
+        def score_voice(v):
+            score = 0
+            name = v["name"]
+            desc = v.get("description", "").lower()
+            use_case = v.get("use_case", "").lower()
+            age = v.get("age", "").lower()
+
+            # Big bonus for preferred premium voices
+            if name in preferred_names:
+                # Higher bonus for earlier in the list (higher quality)
+                position = preferred_names.index(name)
+                score += 200 - (position * 10)
+
+            # Bonus for high-quality indicators
+            if "high quality" in use_case or "premium" in use_case:
+                score += 50
+            if "characters" in use_case or "narration" in use_case:
+                score += 30
+
+            # Age matching
+            if "young" in char_desc and age == "young":
+                score += 25
+            elif ("old" in char_desc or "elderly" in char_desc) and age == "old":
+                score += 25
+            elif "middle" in age:
+                score += 15  # Middle-aged is versatile
+
+            # Voice quality matching from description
+            if "warm" in char_desc and "warm" in desc:
+                score += 20
+            if "deep" in char_desc and "deep" in desc:
+                score += 20
+            if "soft" in char_desc and "soft" in desc:
+                score += 20
+            if "clear" in desc:
+                score += 15
+            if "smooth" in desc:
+                score += 10
+
+            return score
+
+        # Score and sort
+        scored = [(v, score_voice(v)) for v in gender_voices]
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # Take top 8 candidates for LLM to choose from
-        top_candidates = [v for v, _ in scored[:8]]
-
-        voices_desc = "\n".join(
-            [
-                f"- {v['name']} (id: {v['voice_id']}): {v['gender']}, {v['age']}, {v['accent']} accent. {v['description']}. Best for: {v['use_case']}"
-                for v in top_candidates
-            ]
-        )
-
-        prompt = f"""Select the best voice for this literary character. Return ONLY the voice_id.
-
-CHARACTER PROFILE:
-Name: {character.name}
-Gender: {char_gender}
-Physical/Voice Description: {character.description}
-Personality & Speech Style: {character.personality}
-Background: {character.backstory}
-
-VOICE OPTIONS (pre-filtered for best matches):
-{voices_desc}
-
-MATCHING PRIORITIES:
-1. Gender must match
-2. Age should fit the character (young/middle-aged/old)
-3. Accent should match setting (British for UK stories, American for US, etc.)
-4. Voice quality should match personality (warm, authoritative, gentle, rough, etc.)
-5. Prefer voices suited for "characters" or "conversational" use
-
-Return ONLY the voice_id of the best match."""
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        # Track costs
-        if response.usage:
-            self.costs.openrouter_input_tokens += response.usage.prompt_tokens
-            self.costs.openrouter_output_tokens += response.usage.completion_tokens
-
-        voice_id = response.choices[0].message.content.strip()
-
-        # Validate voice_id exists
-        valid_ids = [v["voice_id"] for v in voices]
-        if voice_id not in valid_ids:
-            # Fallback to highest scored voice
-            if scored:
-                return scored[0][0]["voice_id"]
-            return voices[0]["voice_id"]
-
-        return voice_id
+        # Return best match
+        best = scored[0][0]
+        print(f"[Voice] {character.name} ({char_gender}) → {best['name']} (score: {scored[0][1]})")
+        return best["voice_id"]
 
     def set_character(self, character: Character):
         """Set the character to chat with, auto-assigning voice if needed."""
