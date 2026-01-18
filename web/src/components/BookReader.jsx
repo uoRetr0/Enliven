@@ -417,17 +417,14 @@ Jim drew a package from his overcoat pocket. "Dell," said he, "let's put our Chr
         {paragraph.split(/\s+/).map((word, wIndex) => {
           const currentWordCounter = wordCounter
           wordCounter++
-          const isCurrent = currentWordCounter === globalWordIndex
-          const isNear = Math.abs(currentWordCounter - globalWordIndex) <= 2 && globalWordIndex >= 0
+          const isNext = currentWordCounter === globalWordIndex + 1 && globalWordIndex >= 0
           return (
             <span
               key={wIndex}
               className={`transition-all duration-200 ${
-                isCurrent
-                  ? 'text-accent underline decoration-accent/60 decoration-2 underline-offset-2'
-                  : isNear
-                    ? 'text-text-primary'
-                    : 'text-text-primary/70'
+                isNext
+                  ? 'text-purple-300'
+                  : 'text-text-primary/70'
               }`}
             >
               {word}{' '}
