@@ -7,6 +7,7 @@ Talk to book characters with AI-powered voice conversations. Features a React we
 - Chat with AI-powered book characters
 - Text-to-speech responses via ElevenLabs
 - Voice input with auto-stop silence detection
+- **Audiobook generation** with word-by-word highlighting
 - Web UI with real-time chat sidebar
 - CLI with interrupt support
 - Cost tracking for API usage
@@ -49,18 +50,12 @@ npm run dev
 
 Open http://localhost:5173
 
-### CLI
-
-For voice-first terminal interactions:
-```bash
-python cli.py
-```
-
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/extract-characters` | POST | Extract characters from book text |
+| `/api/generate-audiobook` | POST | Generate audiobook with word timestamps |
 | `/api/chat` | POST | Send message, get response + audio |
 | `/api/transcribe` | POST | Transcribe voice input to text |
 | `/api/costs` | GET | Get session API costs |
