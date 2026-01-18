@@ -500,11 +500,20 @@ def _match_speaker_to_character(speaker_key: str, characters: list) -> "Characte
     1. Exact match
     2. Speaker is substring of character name (e.g., "Jim" in "Jim Smith")
     3. Character name is substring of speaker (e.g., "Wolf" matches "The Wolf")
+    4. Semantic similarity (e.g., "The Lamb" matches "Lambikin")
 
     When multiple matches, prefer shorter character names (more specific).
     """
     exact_match = None
     substring_matches = []
+
+    # Common variations/synonyms for fuzzy matching
+    synonyms = {
+        "lamb": ["lambikin", "sheep", "lambkin"],
+        "lambikin": ["lamb", "sheep", "lambkin"],
+        "wolf": ["big bad wolf", "the wolf"],
+        "fox": ["the fox", "reynard"],
+    }
 
     for char in characters:
         char_key = char.name.lower()
@@ -517,13 +526,29 @@ def _match_speaker_to_character(speaker_key: str, characters: list) -> "Characte
         # Check both directions for substring matching
         if speaker_key in char_key or char_key in speaker_key:
             substring_matches.append(char)
+            continue
+
+        # Check synonym/variation matching
+        speaker_base = speaker_key.replace("the ", "").strip()
+        char_base = char_key.replace("the ", "").strip()
+
+        # Direct base match
+        if speaker_base == char_base:
+            substring_matches.append(char)
+            continue
+
+        # Check synonyms
+        for base, variations in synonyms.items():
+            if speaker_base == base or speaker_base in variations:
+                if char_base == base or char_base in variations:
+                    substring_matches.append(char)
+                    break
 
     if exact_match:
         return exact_match
 
     if substring_matches:
         # Prefer shorter names (more specific match)
-        # e.g., "Jim" over "Jimmy" when speaker is "Jim"
         substring_matches.sort(key=lambda c: len(c.name))
         return substring_matches[0]
 
@@ -568,12 +593,36 @@ def _get_voice_for_speaker(speaker: str, session: SessionData) -> str:
         session.voice_map[char_key] = voice_id
         return voice_id
 
-    # Unknown speaker fallback - use best available narrator voice
+    # Unknown speaker - pick a unique voice (not already used)
     voices = _get_all_voices(session)
-    scored = [(v, _score_narrator_voice(v)) for v in voices]
+    used_voice_ids = set(session.voice_map.values())
+    available = [v for v in voices if v.voice_id not in used_voice_ids]
+    if not available:
+        available = voices
+
+    # Score voices - prefer character voices for unknown speakers
+    def score_unknown(v):
+        score = 0
+        labels = v.labels or {}
+        use_case = labels.get("use_case", "").lower()
+        desc = labels.get("description", "").lower()
+        age = labels.get("age", "").lower()
+
+        # Prefer character/conversational voices
+        if "characters" in use_case or "conversational" in use_case:
+            score += 30
+        # For lamb/sheep/innocent characters, prefer young/soft voices
+        if any(word in speaker_key for word in ["lamb", "sheep", "kid", "child", "little"]):
+            if age == "young":
+                score += 50
+            if "soft" in desc or "gentle" in desc or "sweet" in desc:
+                score += 30
+        return score
+
+    scored = [(v, score_unknown(v)) for v in available]
     scored.sort(key=lambda x: x[1], reverse=True)
-    best = scored[0][0] if scored else voices[0]
-    print(f"[Voice] Unknown speaker '{speaker}' → {best.name} (fallback)")
+    best = scored[0][0] if scored else available[0]
+    print(f"[Voice] Unknown speaker '{speaker}' → {best.name} (score: {scored[0][1] if scored else 0})")
     session.voice_map[speaker_key] = best.voice_id
     return best.voice_id
 
